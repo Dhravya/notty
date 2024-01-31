@@ -92,6 +92,12 @@ function NovelEditor({ id }: { id: string }) {
             setSaveStatus('Unsaved');
           }}
           onDebouncedUpdate={async (value) => {
+            // Move to the bottom of the page smoothly
+            window.scrollTo({
+              top: document.body.scrollHeight,
+              behavior: 'smooth',
+            });
+
             if (!value) return;
             setSaveStatus('Saving...');
             const response = await fetch('/api/save', {

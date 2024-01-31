@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Drawer } from 'vaul';
 import { useEffect, useRef, useState } from 'react';
 import autoAnimate from '@formkit/auto-animate';
+import { signIn, signOut, useSession } from 'next-auth/react';
 
 type Value = {
   type: string;
@@ -47,6 +48,7 @@ const ResponsiveDrawer = ({ children }: { children: React.ReactNode }) => (
 );
 export function NotesViewer() {
   const [kv, setKv] = useState<[string, Value][]>([]);
+  const { data: session } = useSession();
 
   const fetchLocalStorageData = () => {
     const entries = Object.entries(localStorage);
@@ -184,8 +186,24 @@ export function NotesViewer() {
                 </div>
               </div>
             </div>
-            <div className="p-4 bg-zinc-100 border-t border-zinc-200 mt-auto absolute bottom-0">
-              <div className="flex gap-6 justify-end max-w-md mx-auto">
+            <div className="flex  justify-between p-4 bg-zinc-100 border-t border-zinc-200 mt-auto absolute bottom-0 w-full">
+              {session?.user?.email ? (
+                <button
+                  onClick={() => signOut()}
+                  className="text-xs text-zinc-600 flex items-center gap-0.25"
+                >
+                  ({session.user.email}): Sign out
+                </button>
+              ) : (
+                <button
+                  onClick={() => signIn('google')}
+                  className="text-xs text-zinc-600 flex items-center gap-0.25"
+                >
+                  Sign in for cloud sync
+                </button>
+              )}
+
+              <div className="flex gap-6 max-w-md">
                 <a
                   className="text-xs text-zinc-600 flex items-center gap-0.25"
                   href="https://github.com/emilkowalski/vaul"

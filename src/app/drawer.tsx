@@ -52,9 +52,7 @@ export function NotesViewer() {
           return [key, JSON.parse(value)] as [string, Value];
         }
       })
-      .filter(
-        (kv) => kv !== undefined,
-      );
+      .filter((kv) => kv !== undefined);
 
     if (keyVal) {
       setKv(keyVal as [string, Value][]);
@@ -74,7 +72,7 @@ export function NotesViewer() {
   return (
     <ResponsiveDrawer>
       <Drawer.Trigger
-        className="flex gap-2 p-2 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-stone-100 active:bg-stone-200 sm:bottom-auto sm:top-5"
+        className="flex gap-2 p-2 items-center justify-center rounded-lg transition-colors duration-200 hover:bg-stone-100 active:bg-stone-200 sm:bottom-auto sm:top-5 max-h-min"
         asChild
       >
         <button>

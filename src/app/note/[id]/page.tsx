@@ -6,10 +6,10 @@ import { Editor } from 'novel';
 
 function Page({ params }: { params: { id: string } }) {
   return (
-    <div className="flex min-h-screen flex-col items-center sm:px-5 sm:pt-[calc(20vh)] ">
+    <div className="flex min-h-[100svh] flex-col items-center sm:px-5 sm:pt-[calc(20vh)] ">
       <a
         href="/"
-        className="absolute flex gap-2 bottom-5 left-5 max-h-fit rounded-lg p-2 transition-colors duration-200 hover:bg-stone-100 sm:bottom-auto sm:top-5"
+        className="fixed z-10 bg-white flex gap-2 bottom-5 left-5 max-h-fit rounded-lg p-2 transition-colors duration-200 hover:bg-stone-100 sm:bottom-auto sm:top-5"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -27,7 +27,7 @@ function Page({ params }: { params: { id: string } }) {
         </svg>{' '}
         New note
       </a>
-      <div className="absolute flex gap-4 bottom-5 right-5 md:top-5">
+      <div className="fixed flex gap-4 bottom-5 right-5 md:top-5">
         <NotesViewer />
       </div>
       <Editor

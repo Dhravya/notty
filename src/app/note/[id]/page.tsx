@@ -1,8 +1,5 @@
-'use client';
-
 import { NotesViewer } from '@/app/drawer';
-import Menu from '@/app/ui/menu';
-import { Editor } from 'novel';
+import NovelEditor from './novelEditor';
 
 function Page({ params }: { params: { id: string } }) {
   return (
@@ -27,17 +24,10 @@ function Page({ params }: { params: { id: string } }) {
         </svg>{' '}
         New note
       </a>
-      <div className="fixed flex gap-4 bottom-5 right-5 md:top-5">
+      <div className="fixed flex gap-4 bottom-5 right-5 md:top-5 z-20">
         <NotesViewer />
       </div>
-      <Editor
-        defaultValue={
-          '## welcome to notty \n`notty` is a minimal note taking app and markdown editor.'
-        }
-        storageKey={params.id}
-        disableLocalStorage={false}
-        className="novel-relative novel-min-h-[500px] novel-w-full novel-max-w-screen-lg novel-border-stone-200 sm:novel-mb-[calc(20vh)] sm:novel-rounded-lg sm:novel-border sm:novel-shadow-lg"
-      />
+      <NovelEditor id={params.id} />
     </div>
   );
 }

@@ -94,10 +94,10 @@ function NovelEditor({ id }: { id: string }) {
           onDebouncedUpdate={async (value) => {
             if (!value) return;
 
-            window.scrollBy({
-              top: 100,
-              behavior: 'smooth',
-            });
+            // window.scrollBy({
+            //   top: 100,
+            //   behavior: 'smooth',
+            // });
 
             setSaveStatus('Saving...');
             const response = await fetch('/api/note', {

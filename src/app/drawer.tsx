@@ -23,6 +23,9 @@ const extractTitle = (value: Value) => {
   // Searching for the text inside the 'heading' type
   const contentArray = processedValue.content ?? [];
   for (const contentItem of contentArray) {
+    if (!contentItem.content) {
+      return 'untitled';
+    }
     for (const innerContent of contentItem.content) {
       return innerContent.text.length > 36
         ? innerContent.text.substring(0, 36) + '...'
@@ -218,7 +221,7 @@ export function NotesViewer() {
               <div className="flex gap-6 max-w-md">
                 <a
                   className="text-xs text-zinc-600 flex items-center gap-0.25"
-                  href="https://github.com/emilkowalski/vaul"
+                  href="https://github.com/dhravya/notty"
                   target="_blank"
                 >
                   GitHub
@@ -241,7 +244,7 @@ export function NotesViewer() {
                 </a>
                 <a
                   className="text-xs text-zinc-600 flex items-center gap-0.25"
-                  href="https://twitter.com/emilkowalski_"
+                  href="https://twitter.com/dhravyashah"
                   target="_blank"
                 >
                   Twitter

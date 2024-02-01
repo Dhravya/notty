@@ -20,6 +20,12 @@ export const metadata: Metadata = {
   openGraph: {
     title,
     description,
+    images: [
+      {
+        url: '/ogimage.png',
+        alt: title,
+      },
+    ]
   },
   twitter: {
     title,

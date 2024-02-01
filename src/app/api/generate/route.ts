@@ -14,7 +14,6 @@ const openai = new OpenAI({
 export const runtime = "edge";
 
 export async function POST(req: Request): Promise<Response> {
-
   if (
     env.NODE_ENV != "development" &&
     env.UPSTASH_REDIS_REST_URL &&

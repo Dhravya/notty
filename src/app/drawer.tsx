@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Drawer } from 'vaul';
-import { useEffect, useRef, useState } from 'react';
-import autoAnimate from '@formkit/auto-animate';
-import { signIn, signOut, useSession } from 'next-auth/react';
+import Link from "next/link";
+import { Drawer } from "vaul";
+import { useEffect, useRef, useState } from "react";
+import autoAnimate from "@formkit/auto-animate";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 type Value = {
   type: string;
@@ -14,7 +14,7 @@ type Value = {
 const extractTitle = (value: Value) => {
   let processedValue = value;
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     // convert into object
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     processedValue = JSON.parse(value);
@@ -24,15 +24,15 @@ const extractTitle = (value: Value) => {
   const contentArray = processedValue.content ?? [];
   for (const contentItem of contentArray) {
     if (!contentItem.content) {
-      return 'untitled';
+      return "untitled";
     }
     for (const innerContent of contentItem.content) {
       return innerContent.text.length > 36
-        ? innerContent.text.substring(0, 36) + '...'
+        ? innerContent.text.substring(0, 36) + "..."
         : innerContent.text;
     }
   }
-  return 'untitled';
+  return "untitled";
 };
 
 const ResponsiveDrawer = ({ children }: { children: React.ReactNode }) => (
@@ -70,13 +70,13 @@ export function NotesViewer() {
   // Function to fetch data from cloud
   const fetchCloudData = async () => {
     try {
-      const response = await fetch('/api/fetchPosts');
+      const response = await fetch("/api/fetchPosts");
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const data = await response.json();
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return data as [string, Value][];
     } catch (error) {
-      console.error('Error fetching cloud data:', error);
+      console.error("Error fetching cloud data:", error);
       return [];
     }
   };
@@ -89,7 +89,7 @@ export function NotesViewer() {
     // Process cloud data to match local data format
     const processedCloudData = cloudData.map(
       ([key, value]: [key: string, value: Value]) => {
-        const id = key.split('-').pop(); // Extracts the id from [email]-id format
+        const id = key.split("-").pop(); // Extracts the id from [email]-id format
         return [id, value] as [string, Value];
       },
     );
@@ -112,7 +112,7 @@ export function NotesViewer() {
   return (
     <ResponsiveDrawer>
       <Drawer.Trigger
-        className="flex gap-2 p-2 bg-white items-center justify-center rounded-lg transition-colors duration-200 hover:bg-stone-100 active:bg-stone-200 sm:bottom-auto sm:top-5"
+        className="flex items-center justify-center gap-2 rounded-lg bg-white p-2 transition-colors duration-200 hover:bg-stone-100 active:bg-stone-200 sm:bottom-auto sm:top-5"
         asChild
       >
         <button>
@@ -122,7 +122,7 @@ export function NotesViewer() {
             viewBox="0 0 24 24"
             strokeWidth={1.5}
             stroke="currentColor"
-            className="w-6 h-6"
+            className="h-6 w-6"
           >
             <path
               strokeLinecap="round"
@@ -135,13 +135,13 @@ export function NotesViewer() {
       </Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-black/40" />
-        <Drawer.Content className="bg-white flex flex-col rounded-t-[10px] h-[96%] md:h-full md:w-[400px] w-full mt-24 fixed bottom-0 right-0 z-40">
+        <Drawer.Content className="fixed bottom-0 right-0 z-40 mt-24 flex h-[96%] w-full flex-col rounded-t-[10px] bg-white md:h-full md:w-[400px]">
           <>
-            <div className="rounded-t-[10px] flex flex-col md:flex-row h-screen">
-              <div className="mx-auto md:my-auto md:ml-4 w-12 h-1.5 md:w-1.5 md:h-12 flex-shrink-0 rounded-full bg-zinc-300 mt-4 mb-8" />
-              <div className="p-4 bg-white flex-1 overflow-auto mb-24 md:mb-10">
-                <div className="max-w-md mx-auto">
-                  <Drawer.Title className="font-medium mb-4">
+            <div className="flex h-screen flex-col rounded-t-[10px] md:flex-row">
+              <div className="mx-auto mb-8 mt-4 h-1.5 w-12 flex-shrink-0 rounded-full bg-zinc-300 md:my-auto md:ml-4 md:h-12 md:w-1.5" />
+              <div className="mb-24 flex-1 overflow-auto bg-white p-4 md:mb-10">
+                <div className="mx-auto max-w-md">
+                  <Drawer.Title className="mb-4 font-medium">
                     Your notes
                   </Drawer.Title>
                   <div ref={parent} className="flex flex-col gap-3">
@@ -149,18 +149,18 @@ export function NotesViewer() {
                       <div className="flex gap-2" key={key}>
                         <Link
                           href={`/note/${key}`}
-                          className="hover:bg-stone-100 active:bg-stone-200 p-2 rounded-md w-full"
+                          className="w-full rounded-md p-2 hover:bg-stone-100 active:bg-stone-200"
                         >
                           {key.length === 10 && key.match(/^\d+$/)
                             ? value
                               ? extractTitle(value)
-                              : 'untitled'
+                              : "untitled"
                             : null}
                         </Link>
                         <button
-                          className="hover:bg-stone-100 active:bg-stone-200 p-2 rounded-md h-10 w-10 flex items-center justify-center"
+                          className="flex h-10 w-10 items-center justify-center rounded-md p-2 hover:bg-stone-100 active:bg-stone-200"
                           onClick={async () => {
-                            const newKey = 'archived-' + key;
+                            const newKey = "archived-" + key;
                             const newValue = localStorage.getItem(key);
                             localStorage.removeItem(key);
                             localStorage.setItem(
@@ -170,13 +170,13 @@ export function NotesViewer() {
                             fetchLocalStorageData();
 
                             await fetch(`/api/note?id=${key}`, {
-                              method: 'DELETE',
+                              method: "DELETE",
                               headers: {
-                                'Content-Type': 'application/json',
+                                "Content-Type": "application/json",
                               },
                             }).then((response) => {
                               if (!response.ok) {
-                                throw new Error('Network response was not ok');
+                                throw new Error("Network response was not ok");
                               }
                               void combineData();
                             });
@@ -186,7 +186,7 @@ export function NotesViewer() {
                             xmlns="http://www.w3.org/2000/svg"
                             viewBox="0 0 16 16"
                             fill="currentColor"
-                            className="w-4 h-4"
+                            className="h-4 w-4"
                           >
                             <path
                               fillRule="evenodd"
@@ -201,26 +201,26 @@ export function NotesViewer() {
                 </div>
               </div>
             </div>
-            <div className="flex  justify-between p-4 bg-zinc-100 border-t border-zinc-200 mt-auto absolute bottom-0 w-full">
+            <div className="absolute  bottom-0 mt-auto flex w-full justify-between border-t border-zinc-200 bg-zinc-100 p-4">
               {session?.user?.email ? (
                 <button
                   onClick={() => signOut()}
-                  className="text-xs text-zinc-600 flex items-center gap-0.25"
+                  className="gap-0.25 flex items-center text-xs text-zinc-600"
                 >
                   ({session.user.email}): Sign out
                 </button>
               ) : (
                 <button
-                  onClick={() => signIn('google')}
-                  className="text-xs text-zinc-600 flex items-center gap-0.25"
+                  onClick={() => signIn("google")}
+                  className="gap-0.25 flex items-center text-xs text-zinc-600"
                 >
                   Sign in for cloud sync
                 </button>
               )}
 
-              <div className="flex gap-6 max-w-md">
+              <div className="flex max-w-md gap-6">
                 <a
-                  className="text-xs text-zinc-600 flex items-center gap-0.25"
+                  className="gap-0.25 flex items-center text-xs text-zinc-600"
                   href="https://github.com/dhravya/notty"
                   target="_blank"
                 >
@@ -235,7 +235,7 @@ export function NotesViewer() {
                     viewBox="0 0 24 24"
                     width="16"
                     aria-hidden="true"
-                    className="w-3 h-3 ml-1"
+                    className="ml-1 h-3 w-3"
                   >
                     <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"></path>
                     <path d="M15 3h6v6"></path>
@@ -243,7 +243,7 @@ export function NotesViewer() {
                   </svg>
                 </a>
                 <a
-                  className="text-xs text-zinc-600 flex items-center gap-0.25"
+                  className="gap-0.25 flex items-center text-xs text-zinc-600"
                   href="https://twitter.com/dhravyashah"
                   target="_blank"
                 >
@@ -258,7 +258,7 @@ export function NotesViewer() {
                     viewBox="0 0 24 24"
                     width="16"
                     aria-hidden="true"
-                    className="w-3 h-3 ml-1"
+                    className="ml-1 h-3 w-3"
                   >
                     <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"></path>
                     <path d="M15 3h6v6"></path>

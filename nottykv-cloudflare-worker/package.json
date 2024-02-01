@@ -1,17 +1,17 @@
 {
-  "name": "nottykv",
-  "version": "0.0.0",
-  "private": true,
-  "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "start": "wrangler dev"
-  },
-  "devDependencies": {
-    "wrangler": "^3.0.0"
-  },
-  "dependencies": {
-    "@cloudflare/workers-types": "^4.20240129.0",
-    "next-pwa": "^5.6.0"
-  }
+	"name": "nottykv",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev"
+	},
+	"devDependencies": {
+		"wrangler": "^3.0.0"
+	},
+	"dependencies": {
+		"@cloudflare/workers-types": "^4.20240129.0",
+		"next-pwa": "^5.6.0"
+	}
 }

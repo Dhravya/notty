@@ -1,24 +1,24 @@
-'use client';
+"use client";
 
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from '@/app/ui/primitives/popover';
-import { Check, Menu as MenuIcon, Monitor, Moon, SunDim } from 'lucide-react';
-import { useTheme } from 'next-themes';
+} from "@/app/ui/primitives/popover";
+import { Check, Menu as MenuIcon, Monitor, Moon, SunDim } from "lucide-react";
+import { useTheme } from "next-themes";
 
 const appearances = [
   {
-    theme: 'System',
+    theme: "System",
     icon: <Monitor className="h-4 w-4" />,
   },
   {
-    theme: 'Light',
+    theme: "Light",
     icon: <SunDim className="h-4 w-4" />,
   },
   {
-    theme: 'Dark',
+    theme: "Dark",
     icon: <Moon className="h-4 w-4" />,
   },
 ];

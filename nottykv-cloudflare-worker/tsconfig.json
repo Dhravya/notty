@@ -4,6 +4,6 @@
 		"module": "CommonJS",
 		"lib": ["ES2020"],
 		"types": ["@cloudflare/workers-types"],
-		"strictNullChecks": true
+		"strictNullChecks": true,
 	},
 }

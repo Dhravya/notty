@@ -23,22 +23,19 @@ export async function POST(req: Request) {
     ? filename
     : `${filename}${fileType}`;
 
-  const blob = await fetch(
-    "https://notty-images.dhravya.workers.dev",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Custom-Auth-Key": `${env.CLOUDFLARE_R2_TOKEN}`,
-      },
-      body: JSON.stringify({
-        filename: finalName,
-        file,
-      }),
+  const blob = await fetch("https://notty-images.dhravya.workers.dev", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Custom-Auth-Key": `${env.CLOUDFLARE_R2_TOKEN}`,
     },
-  );
+    body: JSON.stringify({
+      filename: finalName,
+      file,
+    }),
+  });
 
-  const url = await blob.text()
+  const url = await blob.text();
 
   return NextResponse.json({
     success: true,

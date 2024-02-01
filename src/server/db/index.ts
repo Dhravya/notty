@@ -8,5 +8,5 @@ export const db = drizzle(
   new Database(env.DATABASE_URL, {
     fileMustExist: false,
   }),
-  { schema }
+  { schema },
 );

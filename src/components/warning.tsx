@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
 /**
  * v0 by Vercel.
  * @see https://v0.dev/t/RvBL7CWvezj
  * Documentation: https://v0.dev/docs#integrating-generated-code-into-your-nextjs-app
  */
-import { Button } from '@/components/ui/button';
+import { Button } from "@/components/ui/button";
 
 export default function Warning({
   handleKeepLocalStorage,
@@ -17,9 +17,9 @@ export default function Warning({
   return (
     <div
       key="1"
-      className="bg-white shadow-md rounded-lg p-6 m-4 flex items-center gap-4"
+      className="m-4 flex items-center gap-4 rounded-lg bg-white p-6 shadow-md"
     >
-      <AlertTriangleIcon className="hidden md:block h-6 w-6 text-yellow-500" />
+      <AlertTriangleIcon className="hidden h-6 w-6 text-yellow-500 md:block" />
       <div className="flex-grow">
         <h2 className="text-xl font-bold">Warning</h2>
         <p>
@@ -30,14 +30,14 @@ export default function Warning({
       <div className="flex flex-col justify-end gap-4 md:flex-row">
         <Button
           onClick={handleKeepLocalStorage}
-          className="text-blue-500 border-blue-500"
+          className="border-blue-500 text-blue-500"
           variant="outline"
         >
           Keep Local Storage
         </Button>
         <Button
           onClick={handleKeepCloudStorage}
-          className="text-blue-500 border-blue-500"
+          className="border-blue-500 text-blue-500"
           variant="outline"
         >
           Keep Cloud

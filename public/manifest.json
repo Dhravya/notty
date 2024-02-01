@@ -1,25 +1,25 @@
 {
-    "theme_color": "#8936FF",
-    "background_color": "#64cfdf",
-    "icons": [
-        {
-            "purpose": "maskable",
-            "sizes": "512x512",
-            "src": "icon512_maskable.png",
-            "type": "image/png"
-        },
-        {
-            "purpose": "any",
-            "sizes": "512x512",
-            "src": "icon512_rounded.png",
-            "type": "image/png"
-        }
-    ],
-    "orientation": "portrait",
-    "display": "standalone",
-    "dir": "auto",
-    "lang": "en-US",
-    "name": "Notty - notes, simplified",
-    "short_name": "Notty",
-    "description": "Notty is a simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. It uses AI to help you write and stay productive."
+  "theme_color": "#8936FF",
+  "background_color": "#64cfdf",
+  "icons": [
+    {
+      "purpose": "maskable",
+      "sizes": "512x512",
+      "src": "icon512_maskable.png",
+      "type": "image/png"
+    },
+    {
+      "purpose": "any",
+      "sizes": "512x512",
+      "src": "icon512_rounded.png",
+      "type": "image/png"
+    }
+  ],
+  "orientation": "portrait",
+  "display": "standalone",
+  "dir": "auto",
+  "lang": "en-US",
+  "name": "Notty - notes, simplified",
+  "short_name": "Notty",
+  "description": "Notty is a simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. It uses AI to help you write and stay productive."
 }

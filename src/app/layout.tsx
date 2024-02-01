@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import '@/styles/globals.css';
+import "@/styles/globals.css";
 
-import { Inter } from 'next/font/google';
-import Providers from './providers';
+import { Inter } from "next/font/google";
+import Providers from "./providers";
 
 const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-sans',
+  subsets: ["latin"],
+  variable: "--font-sans",
 });
 
 export default function RootLayout({

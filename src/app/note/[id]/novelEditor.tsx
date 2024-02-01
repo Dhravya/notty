@@ -5,9 +5,7 @@ import { Editor } from 'novel';
 import { useEffect, useState } from 'react';
 
 function NovelEditor({ id }: { id: string }) {
-  const [data, setData] = useState(
-    '',
-  );
+  const [data, setData] = useState('');
   const [cloudData, setCloudData] = useState('');
   const [syncWithCloudWarning, setSyncWithCloudWarning] = useState(false);
   const [saveStatus, setSaveStatus] = useState('Saved');

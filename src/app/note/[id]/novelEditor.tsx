@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 
 function NovelEditor({ id }: { id: string }) {
   const [data, setData] = useState(
-    '## welcome to notty \n`notty` is a minimal note taking app and markdown editor.',
+    '## welcome to notty \n`notty` is a minimal note taking app and markdown editor.\n\n![notty-logo](/logo.png)',
   );
   const [cloudData, setCloudData] = useState('');
   const [syncWithCloudWarning, setSyncWithCloudWarning] = useState(false);
@@ -77,7 +77,7 @@ function NovelEditor({ id }: { id: string }) {
           handleKeepCloudStorage={handleKeepCloudStorage}
         />
       )}
-      <div className="relative w-full max-w-screen-lg">
+      <div className="relative w-full max-w-screen-lg pb-8">
         <div className="absolute right-5 top-5 mb-5 rounded-lg bg-stone-100 px-2 py-1 text-sm text-stone-400">
           {saveStatus}
         </div>
@@ -93,6 +93,12 @@ function NovelEditor({ id }: { id: string }) {
           }}
           onDebouncedUpdate={async (value) => {
             if (!value) return;
+
+            window.scrollBy({
+              top: 100,
+              behavior: 'smooth',
+            });
+
             setSaveStatus('Saving...');
             const response = await fetch('/api/note', {
               method: 'POST',

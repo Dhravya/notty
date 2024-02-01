@@ -3,7 +3,7 @@ import NovelEditor from './novelEditor';
 
 function Page({ params }: { params: { id: string } }) {
   return (
-    <div className="flex min-h-[100svh] flex-col items-center sm:px-5 sm:pt-[calc(20vh)] ">
+    <div className="flex min-h-[100svh] flex-col items-center sm:px-5 sm:pt-[calc(20vh)] mb-12 md:mb-0">
       <a
         href="/"
         className="fixed z-10 bg-white flex gap-2 bottom-5 left-5 max-h-fit rounded-lg p-2 transition-colors duration-200 hover:bg-stone-100 sm:bottom-auto sm:top-5"

@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 
 function NovelEditor({ id }: { id: string }) {
   const [data, setData] = useState(
-    '## welcome to notty \n`notty` is a minimal note taking app and markdown editor.\n',
+    '',
   );
   const [cloudData, setCloudData] = useState('');
   const [syncWithCloudWarning, setSyncWithCloudWarning] = useState(false);

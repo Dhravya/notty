@@ -11,7 +11,7 @@ export async function GET(_: Request): Promise<Response> {
     }
 
     // save to cloudflare
-    const getResponse = await fetch(`https://nottykv.dhravya.workers.dev?getAllFromUser=${user.user.email}`,
+    const getResponse = await fetch(`${env.WORKER_BASE_URL}?getAllFromUser=${user.user.email}`,
         {
             method: "GET",
             headers: {

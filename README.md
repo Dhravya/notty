@@ -1,28 +1,76 @@
-# Create T3 App
+# <a href="https://notty.dhr.wtf">
+  <img alt="Notty is a simple, minimal AI powered note taking app and markdown editor" src="https://notty.dhr.wtf/ogimage.png">
+  <h1 align="center">Notty</h1>
+</a>
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+<p align="center">
+  An open source, minimal AI powered note taking app and powerful markdown editor
+</p>
 
-## What's next? How do I make an app with this?
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+## ✨ Features
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+- **Simple**: Notty is designed to be extremely noise free and minimal, using it is a breeze.
+- **AI Powered**: Notty uses AI to help you write better notes and documents.
+- **Markdown**: Comes with a markdown editor built in, with WSIWYG functionality
+- **Cloud Sync**: Sync your notes across devices using the cloud
+- **Conflict Resolution**: If you use notty on multiple devices, it will automatically resolve conflicts for you, if not, it will prompt you to choose the correct version.
+- **Local-first**: Notty is designed to be local first, meaning your data is *always* stored on your device, and optionally in the cloud.
+- **FAST**: Powered by Cloudflare KV, Notty is blazing fast.
 
-## Learn More
+what more could you ask for?
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+## 🚀 Getting Started
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+You can get started with notty by visiting [notty.dhr.wtf](https://notty.dhr.wtf)
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+To set up locally, you can clone the repository and run the following commands:
 
-## How do I deploy this?
+```bash
+git clone https://github.com/dhravya/notty
+cd notty
+bun install
+bun run dev
+```
 
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+To run the cloudflare worker, you need to install wrangler, set up your cloudflare account and would also need to edit the `wrangler.toml` file to include your account id, zone ID, create bindings and add the necessary environment variables.
+
+```bash
+wrangler dev
+```
+
+The necessary environment variables are in the [`.env.example`](.env.example) file.
+
+## 📚 Documentation
+The code is more or less self-explanatory and implementation details are documented as comments,
+
+### Tech Stack
+- **Frontend**: Nextjs
+- **Backend**: Cloudflare Workers
+- **Database**: Cloudflare KV
+- **AI**: OpenRouter API
+- **Editor**: [Novel](https://github.com/steventey/novel)
+- **Menu and UI**: [TailwindCSS](https://tailwindcss.com/) + [Vaul by Emil Kowalski](https://github.com/emilkowalski/vaul) + [Shadcn UI](https://ui.shadcn.com)
+
+❤️ Thanks to all the open source projects that made this possible.
+
+## TODO (Planned features)
+- [ ] Fix delete button
+- [ ] Use a forked version of [Novel](https://github.com/steventey/novel) to add 
+  - [ ] Image upload (`/api/upload` route is already there, just need to send the req)
+  - [ ] Background color of blocks 
+- [ ] Dark mode (`next-themes` already there in [`src/app/providers.tsx`](src/app/providers.tsx), but commented out because styles are not yet implemented)
+- [ ] Home page with list of all notes (google docs style) - currently `/` endpoint redirects to a random new note, that endpoint can be at `/new` and `/` can be the home page
+
+## Future Features
+- [ ] Locked notes (requires [webauthn](https://github.com/nextauthjs/next-auth-webauthn)) maybe
+- [ ] Share notes and real time collab using [`partykit`](https://www.partykit.io/) maybe?
+
+## 🤝 Contributing
+
+Contributions, issues and feature requests are welcome. Feel free to check the [issues page](/issues) if you want to contribute.
+
+## 📝 License
+
+Notty is licensed under the MIT License. See [LICENSE](LICENSE) for more information.

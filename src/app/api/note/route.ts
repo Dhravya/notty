@@ -31,7 +31,7 @@ export async function POST(req: Request): Promise<Response> {
     const key = `${user.user.email}-${id}`
 
     // save to cloudflare
-    const putResponse = await fetch(`https://nottykv.dhravya.workers.dev?key=${key}`,
+    const putResponse = await fetch(`${env.WORKER_BASE_URL}?key=${key}`,
         {
             method: "PUT",
             headers: {
@@ -73,7 +73,7 @@ export async function GET(req: Request): Promise<Response> {
     const key = `${user.user.email}-${id}`
 
     // save to cloudflare
-    const getResponse = await fetch(`https://nottykv.dhravya.workers.dev?key=${key}`,
+    const getResponse = await fetch(`${env.WORKER_BASE_URL}?key=${key}`,
         {
             method: "GET",
             headers: {
@@ -114,7 +114,7 @@ export async function DELETE(req: Request): Promise<Response> {
     const key = `${user.user.email}-${id}`
 
     // save to cloudflare
-    const deleteResponse = await fetch(`https://nottykv.dhravya.workers.dev?key=${key}`,
+    const deleteResponse = await fetch(`${env.WORKER_BASE_URL}?key=${key}`,
         {
             method: "DELETE",
             headers: {

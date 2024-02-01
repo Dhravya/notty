@@ -1,3 +1,5 @@
+'use client';
+
 import { NotesViewer } from '@/app/drawer';
 import NovelEditor from './novelEditor';
 

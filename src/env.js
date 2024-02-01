@@ -22,6 +22,7 @@ export const env = createEnv({
     CLOUDFLARE_R2_TOKEN: z.string(),
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
+    WORKER_BASE_URL: z.string(),
   },
 
   /**
@@ -46,6 +47,7 @@ export const env = createEnv({
     CLOUDFLARE_R2_TOKEN: process.env.CLOUDFLARE_R2_TOKEN,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    WORKER_BASE_URL: process.env.WORKER_BASE_URL,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

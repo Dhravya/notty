@@ -19,7 +19,7 @@
     "display": "standalone",
     "dir": "auto",
     "lang": "en-US",
-    "name": "Nottie - notes, simplified",
-    "short_name": "Nottie",
+    "name": "Notty - notes, simplified",
+    "short_name": "Notty",
     "description": "Notty is a simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. It uses AI to help you write and stay productive."
 }

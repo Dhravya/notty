@@ -9,7 +9,7 @@ export async function POST(req: Request): Promise<Response> {
     const user = await auth()
 
     if (!(user?.user?.email)) {
-        return new Response("Not logged in", {
+        return new Response("Saved locally | Login for Cloud Sync", {
             status: 401,
         });
     }
@@ -59,7 +59,7 @@ export async function GET(req: Request): Promise<Response> {
     const user = await auth()
 
     if (!(user?.user?.email)) {
-        return new Response("Not logged in", {
+        return new Response("Saved locally | Login for Cloud Sync", {
             status: 401,
         });
     }
@@ -68,7 +68,7 @@ export async function GET(req: Request): Promise<Response> {
             status: 400,
         });
     }
-    
+
 
     const key = `${user.user.email}-${id}`
 
@@ -94,4 +94,45 @@ export async function GET(req: Request): Promise<Response> {
     return new Response(JSON.stringify(data), {
         status: 200,
     });
+}
+
+export async function DELETE(req: Request): Promise<Response> {
+    const id = new URL(req.url).searchParams.get("id")
+    const user = await auth()
+
+    if (!(user?.user?.email)) {
+        return new Response("Saved locally | Login for Cloud Sync", {
+            status: 401,
+        });
+    }
+    if (!id) {
+        return new Response("Invalid request", {
+            status: 400,
+        });
+    }
+
+    const key = `${user.user.email}-${id}`
+
+    // save to cloudflare
+    const deleteResponse = await fetch(`https://nottykv.dhravya.workers.dev?key=${key}`,
+        {
+            method: "DELETE",
+            headers: {
+                "X-Custom-Auth-Key": env.CLOUDFLARE_R2_TOKEN
+            }
+        }
+    )
+
+    const data = await deleteResponse.text()
+    console.log(data)
+    if (deleteResponse.status !== 200) {
+        return new Response(data, {
+            status: 404,
+        });
+    }
+
+    return new Response("Deleted", {
+        status: 200,
+    });
+
 }

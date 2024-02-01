@@ -156,7 +156,7 @@ export function NotesViewer() {
                         </Link>
                         <button
                           className="hover:bg-stone-100 active:bg-stone-200 p-2 rounded-md h-10 w-10 flex items-center justify-center"
-                          onClick={() => {
+                          onClick={async () => {
                             const newKey = 'archived-' + key;
                             const newValue = localStorage.getItem(key);
                             localStorage.removeItem(key);
@@ -165,6 +165,18 @@ export function NotesViewer() {
                               JSON.stringify(newValue),
                             );
                             fetchLocalStorageData();
+
+                            await fetch(`/api/note?id=${key}`, {
+                              method: 'DELETE',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                            }).then((response) => {
+                              if (!response.ok) {
+                                throw new Error('Network response was not ok');
+                              }
+                              void combineData();
+                            });
                           }}
                         >
                           <svg

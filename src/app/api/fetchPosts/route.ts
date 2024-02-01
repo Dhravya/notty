@@ -5,7 +5,7 @@ export async function GET(_: Request): Promise<Response> {
     const user = await auth()
 
     if (!(user?.user?.email)) {
-        return new Response("Not logged in", {
+        return new Response("Saved locally | Login for Cloud Sync", {
             status: 401,
         });
     }
@@ -13,7 +13,7 @@ export async function GET(_: Request): Promise<Response> {
     // save to cloudflare
     const getResponse = await fetch(`https://nottykv.dhravya.workers.dev?getAllFromUser=${user.user.email}`,
         {
-            method: "GET", 
+            method: "GET",
             headers: {
                 'X-Custom-Auth-Key': env.CLOUDFLARE_R2_TOKEN
             }

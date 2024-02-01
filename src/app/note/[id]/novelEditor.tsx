@@ -16,7 +16,7 @@ function NovelEditor({ id }: { id: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadData = async () => {
     try {
-      const response = await fetch(`/api/save?id=${id}`);
+      const response = await fetch(`/api/note?id=${id}`);
 
       if (!response.ok) {
         throw new Error('Network response was not ok');
@@ -92,15 +92,9 @@ function NovelEditor({ id }: { id: string }) {
             setSaveStatus('Unsaved');
           }}
           onDebouncedUpdate={async (value) => {
-            // Move to the bottom of the page smoothly
-            window.scrollTo({
-              top: document.body.scrollHeight,
-              behavior: 'smooth',
-            });
-
             if (!value) return;
             setSaveStatus('Saving...');
-            const response = await fetch('/api/save', {
+            const response = await fetch('/api/note', {
               method: 'POST',
               body: JSON.stringify({ id, data: value.getJSON() }),
             });

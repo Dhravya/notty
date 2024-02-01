@@ -4,7 +4,15 @@
  */
 await import("./src/env.js");
 
-/** @type {import("next").NextConfig} */
-const config = {};
+import nextPWA from "next-pwa";
+
+const withPWA = nextPWA({
+    dest: "public",
+    register: true,
+    skipWaiting: true,
+    disableDevLogs: true,
+})
+
+const config = withPWA({});
 
 export default config;

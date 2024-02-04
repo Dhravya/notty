@@ -67,8 +67,22 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
             },
         );
 
+        const newData = [...localData, ...processedCloudData]
+            .filter(([key, value]: [string, Value]) => {
+                return value !== null;
+            })
+            .sort((a, b) => {
+                return Number(b[0]) - Number(a[0]);
+            });
+        
+        const uniqueKeys = Array.from(new Set(newData.map(([key, _]) => key)));
+
+        const uniqueData = uniqueKeys.map((key) => {
+            return newData.find(([k, _]) => k === key)!;
+        });
+
         // Combine and set data
-        setKv(Array.from(new Set([...localData, ...processedCloudData])));
+        setKv(uniqueData)
         setLoading(false); // Set loading state to false when data fetching is complete
     };
 

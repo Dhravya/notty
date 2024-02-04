@@ -105,12 +105,10 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
                     "Content-Type": "application/json",
                 },
             });
-
-            // Re-fetch and combine data after deleting the note
-            void combineData();
         } catch (error) {
             console.error("Error deleting note:", error);
         }
+        void combineData();
     };
 
     const revalidateNotes = async () => {

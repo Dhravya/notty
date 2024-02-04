@@ -47,10 +47,11 @@ export default function HomePage() {
                     </p>
                     <div className="absolute bottom-0 w-full h-20 bg-gradient-to-t from-white dark:from-gray-900" />
 
-                    <div className="absolute bottom-4 right-4">
+                    <div className="absolute bottom-4 right-4 z-10">
                       <button
-                        className="flex h-10 w-10 items-center justify-center rounded-md p-2 hover:bg-stone-100 active:bg-stone-200"
-                        onClick={async () => {
+                        className="flex h-10 w-10 items-center justify-center rounded-md p-2 bg-white hover:bg-stone-100 active:bg-stone-200"
+                        onClick={async (e) => {
+                          e.preventDefault()
                           await deleteNote(key);
                         }}
                       >

@@ -4,6 +4,8 @@ import "@/styles/globals.css";
 
 import { Inter } from "next/font/google";
 import Providers from "./providers";
+import { NotesViewer } from "./drawer";
+import NewNoteButton from "@/components/NewNoteButton";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -57,6 +59,10 @@ export default function RootLayout({
       </head>
       <body className={`font-sans ${inter.variable}`}>
         <Providers>
+          <NewNoteButton />
+          <div className="fixed bottom-5 right-5 z-20 flex gap-4 md:top-5 bg-white max-h-fit">
+            <NotesViewer />
+          </div>
           <main>{children}</main>
         </Providers>
       </body>

@@ -3,6 +3,7 @@
 import { type ReactNode } from "react";
 // import { ThemeProvider } from 'next-themes';
 import { SessionProvider } from "next-auth/react";
+import { NotesProvider } from "@/lib/context/NotesContext";
 
 export default function Providers({ children }: { children: ReactNode }) {
   return (
@@ -13,7 +14,9 @@ export default function Providers({ children }: { children: ReactNode }) {
     //     dark: 'dark',
     //   }}
     // >
-    <SessionProvider>{children}</SessionProvider>
+    <NotesProvider>
+      <SessionProvider>{children}</SessionProvider>
+    </NotesProvider>
     // </ThemeProvider>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import Warning from '@/components/warning';
+import useNotes from '@/lib/context/NotesContext';
 import { Editor } from 'novel';
 import { useEffect, useState } from 'react';
 
@@ -9,6 +10,8 @@ function NovelEditor({ id }: { id: string }) {
   const [cloudData, setCloudData] = useState('');
   const [syncWithCloudWarning, setSyncWithCloudWarning] = useState(false);
   const [saveStatus, setSaveStatus] = useState('Saved');
+
+  const { revalidateNotes, kv } = useNotes();
 
   // Function to load data from cloud
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,11 +95,6 @@ function NovelEditor({ id }: { id: string }) {
           onDebouncedUpdate={async (value) => {
             if (!value) return;
 
-            // window.scrollBy({
-            //   top: 100,
-            //   behavior: 'smooth',
-            // });
-
             setSaveStatus('Saving...');
             const response = await fetch('/api/note', {
               method: 'POST',
@@ -104,6 +102,15 @@ function NovelEditor({ id }: { id: string }) {
             });
             const res = await response.text();
             setSaveStatus(res);
+
+            const kvValue = kv.find(([key]) => key === id);
+            const kvValueFirstLine = kvValue?.[1].content?.[0].content[0].text.split('\n')[0];
+
+            // if first line edited, revalidate notes
+            if (value.getText().split('\n')[0] !== kvValueFirstLine) {
+              console.log("revalidating notes")
+              void revalidateNotes();
+            }
           }}
         />
       </div>

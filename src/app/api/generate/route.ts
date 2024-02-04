@@ -15,9 +15,8 @@ export const runtime = "edge";
 
 export async function POST(req: Request): Promise<Response> {
   if (
-    env.NODE_ENV != "development" &&
-    env.UPSTASH_REDIS_REST_URL &&
-    env.UPSTASH_REDIS_REST_TOKEN
+    env.KV_REST_API_URL &&
+    env.KV_REST_API_TOKEN
   ) {
     const ip = req.headers.get("x-forwarded-for");
     const ratelimit = new Ratelimit({
@@ -26,7 +25,7 @@ export async function POST(req: Request): Promise<Response> {
     });
 
     const { success, limit, reset, remaining } = await ratelimit.limit(
-      `novel_ratelimit_${ip}`,
+      `notty_ratelimit_${ip}`,
     );
 
     if (!success) {

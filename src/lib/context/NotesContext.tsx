@@ -68,7 +68,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
         );
 
         // Combine and set data
-        setKv([...localData, ...processedCloudData]);
+        setKv(Array.from(new Set([...localData, ...processedCloudData])));
         setLoading(false); // Set loading state to false when data fetching is complete
     };
 

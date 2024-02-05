@@ -67,6 +67,7 @@ export async function POST(req: Request): Promise<Response> {
     presence_penalty: 0,
     stream: true,
     n: 1,
+    max_tokens: 400,
   });
 
   // Convert the response into a friendly text-stream

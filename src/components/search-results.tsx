@@ -26,25 +26,11 @@ export function SearchResults({ aiResponse }: { aiResponse: AiResponse }) {
 
   return (
     <div style={{
-      backgroundImage: `linear-gradient(
-        45deg,
-        hsl(240deg 77% 71%) 0%,
-        hsl(301deg 52% 65%) 9%,
-        hsl(337deg 100% 75%) 18%,
-        hsl(4deg 100% 79%) 27%,
-        hsl(25deg 100% 77%) 36%,
-        hsl(42deg 87% 78%) 45%,
-        hsl(76deg 59% 76%) 55%,
-        hsl(133deg 56% 74%) 64%,
-        hsl(170deg 66% 56%) 73%,
-        hsl(185deg 100% 44%) 82%,
-        hsl(195deg 100% 49%) 91%,
-        hsl(202deg 100% 50%) 100%
-      )`
+      backgroundImage: `linear-gradient(to right, #E5D9F2, #CDC1FF)`
     }} className="w-full max-w-2xl mx-auto px-4 py-6 space-y-6 border mt-4 rounded-xl">
       <div className="text-center">
         <h2 className="text-2xl font-bold">{aiResponse[0]}</h2>
-        <p className="text-gray-500">✨ AI Search using Embedchain</p>
+        <p className="text-gray-500">✨ AI Search using <a className="text-sky-500" href="https://embedchain.ai">Embedchain</a></p>
       </div>
       <div className="grid gap-6">
         {aiResponse[1].map((value, index) => (

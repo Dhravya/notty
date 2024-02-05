@@ -19,11 +19,13 @@ export default function HomePage() {
   const { kv, deleteNote } = useNotes();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<AiResponse | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const { data: session } = useSession()
 
   const getSearchResults = async () => {
     if (searchQuery) {
+      setIsAiLoading(true);
       const response = await fetch(`/api/search?prompt=${searchQuery}`, {
         method: "GET",
         headers: {
@@ -38,13 +40,12 @@ export default function HomePage() {
       }
 
       console.log(data);
+      setIsAiLoading(false);
     }
   }
 
   return (
     <div className="mb-12 p-4 flex min-h-[100svh] flex-col items-center sm:px-5 pt-[calc(10vh)] md:mb-0">
-
-
       <div className="flex flex-col">
         <div className="flex flex-col md:flex-row gap-4">
           <Image src="/logo.png" width={120} height={120} alt="logo" />
@@ -60,12 +61,21 @@ export default function HomePage() {
               <Input value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search using AI... ✨" id='searchInput' />
-              <Button onClick={getSearchResults} className="max-w-min md:w-full" type="submit">Ask AI</Button>
+              <Button disabled={isAiLoading} onClick={getSearchResults} className="max-w-min md:w-full" type="submit">Ask AI</Button>
             </div>
           </div>
         )}
       </div>
 
+      {/* TODO: FIX GRADIENT BACKGROUND ANIMATION */}
+      {isAiLoading && (
+        <div style={{
+          backgroundImage: `linear-gradient(to right, #E5D9F2, #CDC1FF)`,
+        }}
+          className="w-full max-w-2xl mx-auto px-4 py-6 space-y-6 border mt-4 rounded-xl flex items-center justify-center animate-gradient">
+          <p className="text-gray-600">Loading Results...</p>
+        </div>
+      )}
       {searchResults && (
         <SearchResults aiResponse={searchResults} />
       )}

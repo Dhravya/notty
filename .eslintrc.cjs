@@ -32,6 +32,7 @@ const config = {
       },
     ],
   },
+  ignorePatterns: ["next.config.mjs", ".eslintrc.cjs"],
 };
 
 module.exports = config;

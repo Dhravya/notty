@@ -58,12 +58,12 @@ The code is more or less self-explanatory and implementation details are documen
 
 ## TODO (Planned features)
 
-- [ ] Fix delete button
+- [.] Fix delete button
 - [ ] Use a forked version of [Novel](https://github.com/steventey/novel) to add
   - [ ] Image upload (`/api/upload` route is already there, just need to send the req)
   - [ ] Background color of blocks
 - [ ] Dark mode (`next-themes` already there in [`src/app/providers.tsx`](src/app/providers.tsx), but commented out because styles are not yet implemented)
-- [ ] Home page with list of all notes (google docs style) - currently `/` endpoint redirects to a random new note, that endpoint can be at `/new` and `/` can be the home page
+- [.] Home page with list of all notes (google docs style) - currently `/` endpoint redirects to a random new note, that endpoint can be at `/new` and `/` can be the home page
 
 ## Future Features
 

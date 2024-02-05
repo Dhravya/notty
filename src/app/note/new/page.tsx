@@ -3,7 +3,7 @@
 import useNotes from '@/lib/context/NotesContext'
 import { redirect } from 'next/navigation'
 
-function NewNoteButton() {
+function Route() {
     const { kv } = useNotes()
 
     const numberOfNotes = kv.length
@@ -11,7 +11,7 @@ function NewNoteButton() {
     // Note IDs should be 10 digit long, starting from 1000000000
     const nextNoteId = 1000000000 + numberOfNotes + 1
 
-    return redirect(`/note/${nextNoteId}`)
+    return redirect(`/note/${nextNoteId}`);
 }
 
-export default NewNoteButton
+export default Route

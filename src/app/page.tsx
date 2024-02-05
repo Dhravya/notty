@@ -88,9 +88,9 @@ export default function HomePage() {
               <Link
                 key={key}
                 href={`/note/${key}`}
-                className="w-full rounded-md p-2 group min-w-full"
+                className="w-full rounded-md p-2 group  col-span-1"
               >
-                <Card className="w-full group-hover:scale-105 duration-150 ease-out">
+                <Card className="min-w-max group-hover:scale-105 duration-150 ease-out">
                   <CardHeader className="rounded-t-lg bg-gray-100 dark:bg-gray-800 group-hover:bg-stone-100 group-active:bg-stone-200 py-2">
                     <CardTitle className="text-sm font-semibold">
                       {key.length === 10 && key.match(/^\d+$/)
@@ -100,7 +100,7 @@ export default function HomePage() {
                         : null}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="relative overflow-hidden h-40 min-w-full">
+                  <CardContent className="relative overflow-hidden h-40">
                     <p className="text-sm mt-4">
                       {exportContentAsText(value)}
                     </p>

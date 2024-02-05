@@ -2,6 +2,9 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+// eslint-ignore-next-line @typescript-eslint/no-empty-interface
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+
 const Input = React.forwardRef<HTMLInputElement, any>(
   ({ className, type, ...props }, ref) => {
     return (

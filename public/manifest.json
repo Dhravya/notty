@@ -23,7 +23,7 @@
   "short_name": "Notty",
   "description": "Notty is a simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. It uses AI to help you write and stay productive.",
   "id": "notty",
-  "start_url": "https://notty.dhr.wtf/",
+  "start_url": "/",
   "shortcuts": [
     {
       "name": "New note",

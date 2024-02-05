@@ -4,6 +4,10 @@ sw.js
 sw.js.map
 workbox-*.js
 workbox-*.js.map
+
+embedchain-backend/db/
+embedchain-backend/env/
+
 # dependencies
 /node_modules
 /.pnp

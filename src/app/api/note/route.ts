@@ -1,9 +1,9 @@
 import { env } from "@/env";
 import { auth } from "@/lib/auth";
+import { exportContentAsText } from "@/lib/note";
 
 export const runtime = "edge";
 
-// TODO: CLOUD SYNC
 export async function POST(req: Request): Promise<Response> {
   const user = await auth();
 
@@ -42,6 +42,30 @@ export async function POST(req: Request): Promise<Response> {
     return new Response("Failed to save", {
       status: 500,
     });
+  }
+
+  // Create embeddings using Embedchain
+  try {
+    const saveEmbedding = await fetch(`${env.BACKEND_BASE_URL}/api/v1/add`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `${env.CLOUDFLARE_R2_TOKEN}`
+      },
+      body: JSON.stringify({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        source: exportContentAsText(data),
+        user: user.user.email,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        note_id: id,
+      }),
+    });
+
+    if (saveEmbedding.status !== 200) {
+      console.error("Failed to save embedding");
+    }
+  } catch (error) {
+    console.error("Error occurred while saving embedding: ", error);
   }
 
   return new Response("Saved", {

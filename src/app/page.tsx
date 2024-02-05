@@ -6,20 +6,68 @@ import { type Value } from "@/types/note";
 import Image from "next/image";
 import Link from "next/link";
 import { CardTitle, CardHeader, CardContent, Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import { useState } from "react";
+import { type AiResponse, aiResponse } from "@/types/aiResponse";
+import { SearchResults } from "@/components/search-results";
+import { useSession } from "next-auth/react";
 
 
 export default function HomePage() {
-  const { kv, loading, deleteNote } = useNotes();
+  const { kv, deleteNote } = useNotes();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<AiResponse | null>(null);
+
+  const { data: session } = useSession()
+
+  const getSearchResults = async () => {
+    if (searchQuery) {
+      const response = await fetch(`/api/search?prompt=${searchQuery}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const data = aiResponse.safeParse(await response.json());
+
+      if (data.success) {
+        console.log(data.data);
+        setSearchResults(data.data);
+      }
+
+      console.log(data);
+    }
+  }
+
   return (
     <div className="mb-12 p-4 flex min-h-[100svh] flex-col items-center sm:px-5 pt-[calc(10vh)] md:mb-0">
 
-      <div className="flex flex-col md:flex-row gap-4">
-        <Image src="/logo.png" width={120} height={120} alt="logo" />
-        <div className="mt-4  text-gray-600 max-w-md">
-          <h1 className="text-xl font-bold">Notty</h1>
-          A simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. Also has AI features so you can focus on writing.
+      {session?.user?.email && (
+        <div className="flex flex-col">
+          <div className="flex flex-col md:flex-row gap-4">
+            <Image src="/logo.png" width={120} height={120} alt="logo" />
+            <div className="mt-4  text-gray-600 max-w-md">
+              <h1 className="text-xl font-bold">Notty</h1>
+              A simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. Also has AI features so you can focus on writing.
+            </div>
+          </div>
+          <div className="mt-8">
+            <Label htmlFor="searchInput">Ask your notes</Label>
+            <div className="flex flex-col md:flex-row md:w-full md:items-center space-y-2 md:space-y-0 md:space-x-2">
+              <Input value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search using AI... ✨" id='searchInput' />
+              <Button onClick={getSearchResults} className="max-w-min md:w-full" type="submit">Ask AI</Button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {searchResults && (
+        <SearchResults aiResponse={searchResults} />
+      )}
 
       {kv && (
         <div className="mt-8 md:px-12">
@@ -29,7 +77,7 @@ export default function HomePage() {
               <Link
                 key={key}
                 href={`/note/${key}`}
-                className="w-full rounded-md p-2 group"
+                className="w-full rounded-md p-2 group min-w-full"
               >
                 <Card className="w-full group-hover:scale-105 duration-150 ease-out">
                   <CardHeader className="rounded-t-lg bg-gray-100 dark:bg-gray-800 group-hover:bg-stone-100 group-active:bg-stone-200 py-2">
@@ -41,7 +89,7 @@ export default function HomePage() {
                         : null}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="relative overflow-hidden h-40">
+                  <CardContent className="relative overflow-hidden h-40 min-w-full">
                     <p className="text-sm mt-4">
                       {exportContentAsText(value)}
                     </p>

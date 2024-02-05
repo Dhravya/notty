@@ -15,6 +15,7 @@
     "@ducanh2912/next-pwa": "^10.2.4",
     "@formkit/auto-animate": "^0.8.1",
     "@radix-ui/react-icons": "^1.3.0",
+    "@radix-ui/react-label": "^2.0.2",
     "@radix-ui/react-slot": "^1.0.2",
     "@t3-oss/env-core": "^0.8.0",
     "@t3-oss/env-nextjs": "^0.7.1",

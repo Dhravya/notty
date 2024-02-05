@@ -23,6 +23,7 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
     WORKER_BASE_URL: z.string(),
+    BACKEND_BASE_URL: z.string(),
   },
 
   /**
@@ -48,6 +49,7 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     WORKER_BASE_URL: process.env.WORKER_BASE_URL,
+    BACKEND_BASE_URL: process.env.BACKEND_BASE_URL,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

@@ -44,15 +44,16 @@ export default function HomePage() {
   return (
     <div className="mb-12 p-4 flex min-h-[100svh] flex-col items-center sm:px-5 pt-[calc(10vh)] md:mb-0">
 
-      {session?.user?.email && (
-        <div className="flex flex-col">
-          <div className="flex flex-col md:flex-row gap-4">
-            <Image src="/logo.png" width={120} height={120} alt="logo" />
-            <div className="mt-4  text-gray-600 max-w-md">
-              <h1 className="text-xl font-bold">Notty</h1>
-              A simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. Also has AI features so you can focus on writing.
-            </div>
+
+      <div className="flex flex-col">
+        <div className="flex flex-col md:flex-row gap-4">
+          <Image src="/logo.png" width={120} height={120} alt="logo" />
+          <div className="mt-4  text-gray-600 max-w-md">
+            <h1 className="text-xl font-bold">Notty</h1>
+            A simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. Also has AI features so you can focus on writing.
           </div>
+        </div>
+        {session?.user?.email && (
           <div className="mt-8">
             <Label htmlFor="searchInput">Ask your notes</Label>
             <div className="flex flex-col md:flex-row md:w-full md:items-center space-y-2 md:space-y-0 md:space-x-2">
@@ -62,8 +63,8 @@ export default function HomePage() {
               <Button onClick={getSearchResults} className="max-w-min md:w-full" type="submit">Ask AI</Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {searchResults && (
         <SearchResults aiResponse={searchResults} />

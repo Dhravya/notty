@@ -27,7 +27,7 @@
   "shortcuts": [
     {
       "name": "New note",
-      "url": "https://notty.dhr.wtf/note/new",
+      "url": "/note/new",
       "description": "Open a new note"
     }
   ],

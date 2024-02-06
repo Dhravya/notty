@@ -1,6 +1,5 @@
 "use client";
 
-import { NotesViewer } from "@/app/drawer";
 import NovelEditor from "./novelEditor";
 
 function Page({ params }: { params: { id: string } }) {

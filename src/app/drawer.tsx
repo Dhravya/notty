@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Drawer } from "vaul";
 import { useEffect, useRef } from "react";
 import autoAnimate from "@formkit/auto-animate";

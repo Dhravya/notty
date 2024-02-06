@@ -15,7 +15,7 @@ export function SearchResults({ aiResponse }: { aiResponse: AiResponse }) {
   const getNoteTitle = (key: string) => {
     if (key.length === 10 && key.match(/^\d+$/)) {
       if (kv) {
-        const value = kv.find(([k, v]) => k === key);
+        const value = kv.find(([k, _]) => k === key);
         if (value) {
           return extractTitle(value[1]);
         }

@@ -68,7 +68,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
         );
 
         const newData = [...localData, ...processedCloudData]
-            .filter(([key, value]: [string, Value]) => {
+            .filter(([_, value]: [string, Value]) => {
                 return value !== null;
             })
             .sort((a, b) => {

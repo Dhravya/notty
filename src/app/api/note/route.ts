@@ -99,8 +99,8 @@ export async function GET(req: Request): Promise<Response> {
   });
 
   if (getResponse.status !== 200) {
-    return new Response("Failed to get", {
-      status: 500,
+    return new Response(await getResponse.text(), {
+      status: getResponse.status,
     });
   }
 

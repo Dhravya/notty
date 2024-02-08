@@ -8,6 +8,7 @@ import { type Value } from "@/types/note";
 import { extractTitle } from "@/lib/note";
 import useNotes from "@/lib/context/NotesContext";
 import SkeletonLoader from "@/components/skeletonLoader";
+import Image from "next/image";
 
 
 const ResponsiveDrawer = ({ children }: { children: React.ReactNode }) => (
@@ -66,6 +67,35 @@ export function NotesViewer() {
             <div className="flex h-screen flex-col rounded-t-[10px] md:flex-row">
               <div className="mx-auto mb-8 mt-4 h-1.5 w-12 flex-shrink-0 rounded-full bg-zinc-300 md:my-auto md:ml-4 md:h-12 md:w-1.5" />
               <div className="mb-24 flex-1 overflow-auto bg-white p-4 md:mb-10">
+                {session?.user?.email ? (
+                  <div className="absolute bottom-16 flex justify-between w-full pr-20 bg-white">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Image
+                        unoptimized
+                        src={session.user.image ?? ''}
+                        alt="profile"
+                        className="h-10 w-10 rounded-full"
+                        width={40}
+                        height={40}
+                      />
+                      <div>
+                        <p className="text-xs">Signed in as</p>
+                        <p className="font-semibold">
+                          {session.user.name}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => signOut()}>
+                      Logout
+                    </button>
+                  </div>
+                ) : (
+                  <div className="absolute bottom-16 flex justify-center w-full pr-20 bg-white">
+                    <button className="w-full bg-sky-100 rounded-lg p-4 flex gap-4 items-center justify-center" onClick={() => signIn('google')}>
+                      <Image src="/google.svg" alt="google" width={24} height={24} /> Login with Google
+                    </button>
+                  </div>
+                )}
                 {loading ? <SkeletonLoader /> : (
                   <div className="mx-auto max-w-md">
                     <Drawer.Title className="mb-4 font-medium">
@@ -111,21 +141,12 @@ export function NotesViewer() {
               </div>
             </div>
             <div className="absolute  bottom-0 mt-auto flex w-full justify-between border-t border-zinc-200 bg-zinc-100 p-4">
-              {session?.user?.email ? (
-                <button
-                  onClick={() => signOut()}
-                  className="gap-0.25 flex items-center text-xs text-zinc-600"
-                >
-                  ({session.user.email}): Sign out
-                </button>
-              ) : (
-                <button
-                  onClick={() => signIn("google")}
-                  className="gap-0.25 flex items-center text-xs text-zinc-600"
-                >
-                  Sign in for cloud sync
-                </button>
-              )}
+              <div
+                className="gap-1 flex items-center text-xs text-zinc-600"
+              >
+                Made with ❤️ by <a className="text-sky-500" href="https://dhravya.dev">Dhravya Shah</a>
+              </div>
+
 
               <div className="flex max-w-md gap-6">
                 <a

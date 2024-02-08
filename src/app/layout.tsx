@@ -6,6 +6,7 @@ import { Inter } from "next/font/google";
 import Providers from "./providers";
 import { NotesViewer } from "./drawer";
 import NewNoteButton from "@/components/NewNoteButton";
+import Script from "next/script";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -20,12 +21,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <script
+        <Script
           async
           defer
           data-website-id="cbf1706f-88f5-4acc-90fc-31a0724c50eb"
-          src="https://u.dhr.wtf/umami.js"
-        ></script>
+          src="/umami.js"
+        ></Script>
         <title>Notty</title>
         <meta
           name="description"

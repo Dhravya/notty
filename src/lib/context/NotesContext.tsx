@@ -1,31 +1,31 @@
+'use client';
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { type Value } from '@/types/note';
-import { useSession } from 'next-auth/react';
 
 type NotesContextValue = {
     kv: [string, Value][];
     loading: boolean;
     deleteNote: (keyToDelete: string) => Promise<void>;
-    revalidateNotes: () => Promise<void>;
+    revalidateNotes: () => Promise<[string, Value][]>;
 };
 
 const NotesContext = createContext<NotesContextValue | null>(null);
 
 export const useNotes = () => {
     const contextValue = useContext(NotesContext);
-  
+
     if (contextValue === null) {
-      throw new Error("useNotes must be used within a NotesProvider");
+        throw new Error("useNotes must be used within a NotesProvider");
     }
-  
+
     return contextValue;
-  };
+};
 
 export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
     const [kv, setKv] = useState<[string, Value][]>([]);
     const [loading, setLoading] = useState(true); // Loading state
 
-    const {data: session} = useSession();
 
     const fetchLocalStorageData = () => {
         const entries = Object.entries(localStorage);
@@ -43,11 +43,11 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Function to fetch data from cloud
     const fetchCloudData = async () => {
-        if (!session?.user?.email) {
-            return [];
-        }
         try {
             const response = await fetch("/api/fetchPosts");
+            if (response.status != 200) {
+                return [];
+            }
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const data = await response.json();
             // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -66,7 +66,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
         const cloudData = await fetchCloudData();
 
         // Process cloud data to match local data format
-        const processedCloudData = cloudData.map(
+        const processedCloudData = cloudData?.map(
             ([key, value]: [key: string, value: Value]) => {
                 const id = key.split("-").pop(); // Extracts the id from [email]-id format
                 return [id, value] as [string, Value];
@@ -80,7 +80,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
             .sort((a, b) => {
                 return Number(b[0]) - Number(a[0]);
             });
-        
+
         const uniqueKeys = Array.from(new Set(newData.map(([key, _]) => key)));
 
         const uniqueData = uniqueKeys.map((key) => {
@@ -90,12 +90,13 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
         // Combine and set data
         setKv(uniqueData)
         setLoading(false); // Set loading state to false when data fetching is complete
+
+        return kv;
     };
 
 
     useEffect(() => {
         void combineData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const deleteNote = async (keyToDelete: string) => {
@@ -118,7 +119,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const revalidateNotes = async () => {
-        void combineData();
+        return await combineData();
     }
 
     return (
@@ -126,7 +127,6 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
             {children}
         </NotesContext.Provider>
     );
-
 };
 
 export default useNotes;

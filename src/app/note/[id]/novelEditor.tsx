@@ -4,6 +4,7 @@ import Warning from '@/components/warning';
 import useNotes from '@/lib/context/NotesContext';
 import { Editor } from 'novel';
 import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 
 function NovelEditor({ id }: { id: string }) {
   const [data, setData] = useState('');
@@ -12,14 +13,22 @@ function NovelEditor({ id }: { id: string }) {
   const [saveStatus, setSaveStatus] = useState('Saved');
 
   const { revalidateNotes, kv } = useNotes();
+  const { data: session } = useSession();
 
   // Function to load data from cloud
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadData = async () => {
+
+    if (!session?.user?.email) {
+      return null;
+    }
     try {
       const response = await fetch(`/api/note?id=${id}`);
 
-      if (!response.ok) {
+      if (response.status === 404) {
+        return null;
+      }
+      else if (!response.ok) {
         throw new Error('Network response was not ok');
       }
 
@@ -94,6 +103,17 @@ function NovelEditor({ id }: { id: string }) {
           }}
           onDebouncedUpdate={async (value) => {
             if (!value) return;
+            const kvValue = kv.find(([key]) => key === id);
+            const kvValueFirstLine = kvValue?.[1].content?.[0].content[0].text.split('\n')[0];
+
+            // if first line edited, revalidate notes
+            if (value.getText().split('\n')[0] !== kvValueFirstLine) {
+              void revalidateNotes();
+            }
+
+            if (!session?.user?.email) {
+              return;
+            }
 
             setSaveStatus('Saving...');
             const response = await fetch('/api/note', {
@@ -102,15 +122,6 @@ function NovelEditor({ id }: { id: string }) {
             });
             const res = await response.text();
             setSaveStatus(res);
-
-            const kvValue = kv.find(([key]) => key === id);
-            const kvValueFirstLine = kvValue?.[1].content?.[0].content[0].text.split('\n')[0];
-
-            // if first line edited, revalidate notes
-            if (value.getText().split('\n')[0] !== kvValueFirstLine) {
-              console.log("revalidating notes")
-              void revalidateNotes();
-            }
           }}
         />
       </div>

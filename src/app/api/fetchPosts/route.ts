@@ -5,7 +5,9 @@ export async function GET(_: Request): Promise<Response> {
   const user = await auth();
 
   if (!user?.user?.email) {
-    return new Response("Saved locally | Login for Cloud Sync", {
+    return new Response(JSON.stringify({
+      message: "Unauthorized",
+    }), {
       status: 401,
     });
   }

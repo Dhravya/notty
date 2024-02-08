@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { type Value } from '@/types/note';
+import { useSession } from 'next-auth/react';
 
 type NotesContextValue = {
     kv: [string, Value][];
@@ -24,6 +25,8 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
     const [kv, setKv] = useState<[string, Value][]>([]);
     const [loading, setLoading] = useState(true); // Loading state
 
+    const {data: session} = useSession();
+
     const fetchLocalStorageData = () => {
         const entries = Object.entries(localStorage);
         const keyVal = entries
@@ -40,6 +43,9 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Function to fetch data from cloud
     const fetchCloudData = async () => {
+        if (!session?.user?.email) {
+            return [];
+        }
         try {
             const response = await fetch("/api/fetchPosts");
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

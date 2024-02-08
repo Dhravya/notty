@@ -60,7 +60,7 @@ export default function RootLayout({
       <body className={`font-sans ${inter.variable}`}>
         <Providers>
           <NewNoteButton />
-          <div className="fixed bottom-5 right-5 z-20 flex gap-4 md:top-5 bg-white max-h-fit">
+          <div className="fixed bottom-5 right-5 z-20 flex gap-4 md:top-5 bg-white max-h-fit rounded-lg">
             <NotesViewer />
           </div>
           <main>{children}</main>

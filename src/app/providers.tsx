@@ -10,13 +10,15 @@ export default function Providers({ children }: { children: ReactNode }) {
     // <ThemeProvider
     //   attribute="class"
     //   value={{
-    //     light: 'light',
-    //     dark: 'dark',
+    //     light: 'light-theme',
+    //     dark: 'dark-theme',
     //   }}
     // >
-    <NotesProvider>
-      <SessionProvider>{children}</SessionProvider>
-    </NotesProvider>
+      <SessionProvider>
+        <NotesProvider>
+          {children}
+        </NotesProvider>
+      </SessionProvider>
     // </ThemeProvider>
   );
 }

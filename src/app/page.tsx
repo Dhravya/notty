@@ -9,10 +9,11 @@ import { CardTitle, CardHeader, CardContent, Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type AiResponse, aiResponse } from "@/types/aiResponse";
 import { SearchResults } from "@/components/search-results";
 import { useSession } from "next-auth/react";
+import defaultData from "./note/[id]/defaultData";
 
 
 export default function HomePage() {
@@ -44,6 +45,12 @@ export default function HomePage() {
     }
   }
 
+  useEffect(() => {
+    if (!localStorage.getItem('archived-1000000001') && !localStorage.getItem('1000000001')) {
+      localStorage.setItem('1000000001', JSON.stringify(defaultData));
+    }
+  }, []);
+
   return (
     <div className="mb-12 p-4 flex min-h-[100svh] flex-col items-center sm:px-5 pt-[calc(10vh)] md:mb-0">
       <div className="flex flex-col">
@@ -55,15 +62,19 @@ export default function HomePage() {
           </div>
         </div>
         {session?.user?.email && (
-          <div className="mt-8">
-            <Label htmlFor="searchInput">Ask your notes</Label>
-            <div className="flex flex-col md:flex-row md:w-full md:items-center space-y-2 md:space-y-0 md:space-x-2">
-              <Input value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search using AI... ✨" id='searchInput' />
-              <Button disabled={isAiLoading} onClick={getSearchResults} className="max-w-min md:w-full" type="submit">Ask AI</Button>
+          <form
+            onSubmit={(e) => e.preventDefault()}
+          >
+            <div className="mt-8">
+              <Label htmlFor="searchInput">Ask your notes</Label>
+              <div className="flex flex-col md:flex-row md:w-full md:items-center space-y-2 md:space-y-0 md:space-x-2">
+                <Input value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search using AI... ✨" id='searchInput' />
+                <Button disabled={isAiLoading} onClick={getSearchResults} className="max-w-min md:w-full" type="submit">Ask AI</Button>
+              </div>
             </div>
-          </div>
+          </form>
         )}
       </div>
 
@@ -87,7 +98,7 @@ export default function HomePage() {
             {kv.map(([key, value]: [string, Value]) => (
               <Link
                 key={key}
-                href={`/note/${key}`}
+                href={`/note?id=${key}`}
                 className="rounded-md p-2 group  col-span-1"
               >
                 <Card className="group-hover:scale-105 duration-150 ease-out">

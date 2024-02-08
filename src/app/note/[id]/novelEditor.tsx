@@ -4,28 +4,29 @@ import Warning from '@/components/warning';
 import useNotes from '@/lib/context/NotesContext';
 import { Editor } from 'novel';
 import { useEffect, useState } from 'react';
+import { type JSONContent } from "@tiptap/core"
+import defaultData from './defaultData';
 
 function NovelEditor({ id }: { id: string }) {
-  const [data, setData] = useState('');
-  const [cloudData, setCloudData] = useState('');
+  const [data, setData] = useState<JSONContent | string>('');
+  const [cloudData, setCloudData] = useState<JSONContent | string>('');
   const [syncWithCloudWarning, setSyncWithCloudWarning] = useState(false);
   const [saveStatus, setSaveStatus] = useState('Saved');
 
   const { revalidateNotes, kv } = useNotes();
 
-  // Function to load data from cloud
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const loadData = async () => {
     try {
       const response = await fetch(`/api/note?id=${id}`);
 
-      if (!response.ok) {
+      if (response.status === 404) {
+        return null;
+      }
+      else if (!response.ok) {
         throw new Error('Network response was not ok');
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const jsonData = await response.json();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      const jsonData = await response.json() as JSONContent;
       return jsonData;
     } catch (error) {
       console.error('Error loading data from cloud:', error);
@@ -36,10 +37,9 @@ function NovelEditor({ id }: { id: string }) {
   // Effect to synchronize data
   useEffect(() => {
     const synchronizeData = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const cloud = await loadData();
       if (cloud) {
-        setCloudData(cloud as string);
+        setCloudData(cloud);
 
         const local = localStorage.getItem(id);
         if (local) {
@@ -48,7 +48,8 @@ function NovelEditor({ id }: { id: string }) {
             setSyncWithCloudWarning(true);
           }
         } else {
-          setData(cloud as string);
+          setData(cloud);
+          localStorage.setItem(id, JSON.stringify(cloud));
         }
       }
     };
@@ -57,10 +58,7 @@ function NovelEditor({ id }: { id: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Handlers for resolving conflict
   const handleKeepLocalStorage = () => {
-    // Push local data to cloud
-    // Add your logic to update cloud data
     setSyncWithCloudWarning(false);
   };
 
@@ -83,7 +81,7 @@ function NovelEditor({ id }: { id: string }) {
           {saveStatus}
         </div>
         <Editor
-          key={data}
+          key={JSON.stringify(data)}
           defaultValue={data}
           storageKey={id}
           className="novel-relative novel-min-h-[500px] novel-w-full novel-max-w-screen-lg novel-border-stone-200 sm:novel-mb-[calc(20vh)] sm:novel-rounded-lg sm:novel-border sm:novel-shadow-lg"
@@ -94,6 +92,13 @@ function NovelEditor({ id }: { id: string }) {
           }}
           onDebouncedUpdate={async (value) => {
             if (!value) return;
+            const kvValue = kv.find(([key]) => key === id);
+            const kvValueFirstLine = kvValue?.[1].content?.[0].content[0].text.split('\n')[0];
+
+            // if first line edited, revalidate notes
+            if (value.getText().split('\n')[0] !== kvValueFirstLine) {
+              void revalidateNotes();
+            }
 
             setSaveStatus('Saving...');
             const response = await fetch('/api/note', {
@@ -102,15 +107,6 @@ function NovelEditor({ id }: { id: string }) {
             });
             const res = await response.text();
             setSaveStatus(res);
-
-            const kvValue = kv.find(([key]) => key === id);
-            const kvValueFirstLine = kvValue?.[1].content?.[0].content[0].text.split('\n')[0];
-
-            // if first line edited, revalidate notes
-            if (value.getText().split('\n')[0] !== kvValueFirstLine) {
-              console.log("revalidating notes")
-              void revalidateNotes();
-            }
           }}
         />
       </div>

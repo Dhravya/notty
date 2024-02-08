@@ -1,23 +1,17 @@
 'use client'
 
-import useNotes from '@/lib/context/NotesContext'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 
+
 function NewNoteButton() {
-    const { kv } = useNotes()
     const pathname = usePathname()
-
-    const numberOfNotes = kv.length
-
-    // Note IDs should be 10 digit long, starting from 1000000000
-    const nextNoteId = 1000000000 + numberOfNotes + 1
 
     return (
         <>
             {pathname === '/' ? (
                 <a
-                    href={`/note/${nextNoteId}`}
+                    href={`/note/new`}
                     className="fixed border bottom-5 left-5 z-10 flex max-h-fit gap-2 rounded-lg bg-white p-2 transition-colors duration-200 hover:bg-stone-100 sm:bottom-auto sm:top-5"
                 >
                     <svg

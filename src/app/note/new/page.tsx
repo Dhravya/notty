@@ -1,17 +1,12 @@
 'use client'
 
-import useNotes from '@/lib/context/NotesContext'
 import { redirect } from 'next/navigation'
 
 function Route() {
-    const { kv } = useNotes()
+    // Generate a 10 digit number
+    const nextNoteId = Math.floor(Math.random() * 9000000000) + 1000000000;
 
-    const numberOfNotes = kv.length
-
-    // Note IDs should be 10 digit long, starting from 1000000000
-    const nextNoteId = 1000000000 + numberOfNotes + 1
-
-    return redirect(`/note/${nextNoteId}`);
+    return redirect(`/note?id=${nextNoteId}`);
 }
 
 export default Route

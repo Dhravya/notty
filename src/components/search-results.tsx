@@ -39,7 +39,7 @@ export function SearchResults({ aiResponse }: { aiResponse: AiResponse }) {
               <h3 className="text-lg font-semibold mt-4">{getNoteTitle(value[1].note_id)}</h3>
               <p className="text-gray-500">{value[0]}</p>
               <div className="flex flex-col gap-2">
-                <Link className="text-blue-500 hover:underline" href={`/note/${value[1].note_id}`}>
+                <Link className="text-blue-500 hover:underline" href={`/note?id=${value[1].note_id}`}>
                   Note {value[1].note_id}
                 </Link>
               </div>

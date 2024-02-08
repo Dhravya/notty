@@ -87,7 +87,7 @@ export default function HomePage() {
             {kv.map(([key, value]: [string, Value]) => (
               <Link
                 key={key}
-                href={`/note/${key}`}
+                href={`/note?id=${key}`}
                 className="rounded-md p-2 group  col-span-1"
               >
                 <Card className="group-hover:scale-105 duration-150 ease-out">

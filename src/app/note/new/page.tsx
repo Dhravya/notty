@@ -6,12 +6,10 @@ import { redirect } from 'next/navigation'
 function Route() {
     const { kv } = useNotes()
 
-    const numberOfNotes = kv.length
+    const largestNoteId = Math.max(...kv.map((note) => parseInt(note[0])))
+    const nextNoteId = largestNoteId + 1
 
-    // Note IDs should be 10 digit long, starting from 1000000000
-    const nextNoteId = 1000000000 + numberOfNotes + 1
-
-    return redirect(`/note/${nextNoteId}`);
+    return redirect(`/note?id=${nextNoteId}`);
 }
 
 export default Route

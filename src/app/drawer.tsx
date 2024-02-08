@@ -75,7 +75,7 @@ export function NotesViewer() {
                       {kv.map(([key, value]: [string, Value]) => (
                         <div className="flex gap-2" key={key}>
                           <a
-                            href={`/note/${key}`}
+                            href={`/note?id=${key}`}
                             className="w-full rounded-md p-2 hover:bg-stone-100 active:bg-stone-200"
                           >
                             {key.length === 10 && key.match(/^\d+$/)

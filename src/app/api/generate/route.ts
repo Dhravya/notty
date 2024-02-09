@@ -44,7 +44,7 @@ export async function POST(req: Request): Promise<Response> {
   const { prompt } = await req.json();
 
   const response = await openai.chat.completions.create({
-    model: "mistralai/mistral-7b-instruct:free",
+    model: "gpt-3.5-turbo-1106",
     messages: [
       {
         role: "system",
@@ -67,7 +67,6 @@ export async function POST(req: Request): Promise<Response> {
     presence_penalty: 0,
     stream: true,
     n: 1,
-    max_tokens: 400,
   });
 
   // Convert the response into a friendly text-stream

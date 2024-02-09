@@ -25,7 +25,7 @@ export default function RootLayout({
           async
           defer
           data-website-id="cbf1706f-88f5-4acc-90fc-31a0724c50eb"
-          src="/umami.js"
+          src="https://u.dhr.wtf/umami.js"
         ></Script>
         <title>Notty</title>
         <meta

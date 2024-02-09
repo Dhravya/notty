@@ -27,7 +27,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
     const [loading, setLoading] = useState(true); // Loading state
 
 
-    const fetchLocalStorageData = () => {
+    const fetchLocalStorageData = async () => {
         const entries = Object.entries(localStorage);
         const keyVal = entries
             .map(([key, value]: [key: string, value: string]) => {
@@ -37,6 +37,8 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
                 return undefined;
             })
             .filter((kv) => kv !== undefined);
+
+        setKv(keyVal as [string, Value][]);
 
         return keyVal as [string, Value][];
     };
@@ -61,10 +63,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
     // Function to combine and set data from both sources
     const combineData = async () => {
         setLoading(true); // Set loading state to true when data fetching starts
-
-        const localData = fetchLocalStorageData();
-        const cloudData = await fetchCloudData();
-
+        const [localData, cloudData] = await Promise.all([fetchLocalStorageData(), fetchCloudData()]);
         // Process cloud data to match local data format
         const processedCloudData = cloudData?.map(
             ([key, value]: [key: string, value: Value]) => {
@@ -97,6 +96,7 @@ export const NotesProvider = ({ children }: { children: React.ReactNode }) => {
 
     useEffect(() => {
         void combineData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const deleteNote = async (keyToDelete: string) => {

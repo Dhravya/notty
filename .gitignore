@@ -50,3 +50,5 @@ yarn-error.log*
 *.tsbuildinfo
 
 certificates
+embedchain-backend/venv
+**/__pycache__/*

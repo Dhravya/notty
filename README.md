@@ -50,6 +50,7 @@ The code is more or less self-explanatory and implementation details are documen
 - **Frontend**: Nextjs
 - **Backend**: Cloudflare Workers
 - **Database**: Cloudflare KV
+- **Caching**: Vercel KV
 - **AI**: OpenRouter API
 - **Editor**: [Novel](https://github.com/steventey/novel)
 - **Menu and UI**: [TailwindCSS](https://tailwindcss.com/) + [Vaul by Emil Kowalski](https://github.com/emilkowalski/vaul) + [Shadcn UI](https://ui.shadcn.com)

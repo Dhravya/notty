@@ -11,9 +11,10 @@
 ## ✨ Features
 
 - **Simple**: Notty is designed to be extremely noise free and minimal, using it is a breeze.
-- **AI Powered**: Notty uses AI to help you write better notes and documents.
+- **AI Powered with Memory**: Context-aware AI completions using Google Gemini - your notes inform your writing via Supermemory's vector search.
+- **Semantic Search**: Search your notes using natural language powered by Supermemory's vector search.
 - **Markdown**: Comes with a markdown editor built in, with WSIWYG functionality
-- **Cloud Sync**: Sync your notes across devices using the cloud
+- **Cloud Sync**: Sync your notes across devices using the cloud (optional)
 - **Conflict Resolution**: If you use notty on multiple devices, it will automatically resolve conflicts for you, if not, it will prompt you to choose the correct version.
 - **Local-first**: Notty is designed to be local first, meaning your data is _always_ stored on your device, and optionally in the cloud.
 - **FAST**: Powered by Cloudflare KV, Notty is blazing fast.
@@ -27,19 +28,23 @@ You can get started with notty by visiting [notty.dhr.wtf](https://notty.dhr.wtf
 To set up locally, you can clone the repository and run the following commands:
 
 ```bash
-git clone https://github.com/dhravya/notty
-cd notty
-bun install
-bun run dev
+git clone https://github.com/supermemoryai/supernotty
+cd supernotty
+npm install
+npm run dev
 ```
 
+**Required Environment Variables:**
+1. Get your Supermemory API key from [supermemory.ai](https://supermemory.ai)
+2. Copy `.env.example` to `.env` and fill in the values
+3. See [`.env.example`](.env.example) for all required variables
+
+**Cloudflare Worker Setup (Optional for cloud sync):**
 To run the cloudflare worker, you need to install wrangler, set up your cloudflare account and would also need to edit the `wrangler.toml` file to include your account id, zone ID, create bindings and add the necessary environment variables.
 
 ```bash
 wrangler dev
 ```
-
-The necessary environment variables are in the [`.env.example`](.env.example) file.
 
 ## 📚 Documentation
 
@@ -47,11 +52,10 @@ The code is more or less self-explanatory and implementation details are documen
 
 ### Tech Stack
 
-- **Frontend**: Nextjs
-- **Backend**: Cloudflare Workers
-- **Database**: Cloudflare KV
-- **Caching**: Vercel KV
-- **AI**: OpenRouter API
+- **Frontend**: Next.js 14
+- **Memory & Search**: [Supermemory](https://supermemory.ai) - Vector search & intelligent note retrieval for context-aware AI
+- **Storage**: Cloudflare Workers + Cloudflare KV (optional)
+- **AI Model**: Google Gemini 1.5 Flash via [AI SDK](https://ai-sdk.dev)
 - **Editor**: [Novel](https://github.com/steventey/novel)
 - **Menu and UI**: [TailwindCSS](https://tailwindcss.com/) + [Vaul by Emil Kowalski](https://github.com/emilkowalski/vaul) + [Shadcn UI](https://ui.shadcn.com)
 

@@ -57,8 +57,8 @@ export default function HomePage() {
         <div className="flex flex-col md:flex-row gap-4">
           <Image src="/logo.png" width={120} height={120} alt="logo" />
           <div className="mt-4  text-gray-600 max-w-md">
-            <h1 className="text-xl font-bold">Notty</h1>
-            A simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. Also has AI features so you can focus on writing.
+            <h1 className="text-xl font-bold">supernotty</h1>
+            A simple, minimal AI powered note taking app and markdown editor - Built local-first, with cloud sync. Also has memory so it knows what you're referring  about!
           </div>
         </div>
         {session?.user?.email && (

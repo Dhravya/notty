@@ -7,23 +7,18 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
-    DATABASE_URL: z
-      .string()
-      .refine(
-        (str) => !str.includes("YOUR_MYSQL_URL_HERE"),
-        "You forgot to change the default URL",
-      ),
+    DATABASE_URL: z.string().default("db.sqlite"),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
-    OPENROUTER_API_TOKEN: z.string(),
-    KV_REST_API_URL: z.string(),
-    KV_REST_API_TOKEN: z.string(),
-    CLOUDFLARE_R2_TOKEN: z.string(),
-    GOOGLE_CLIENT_ID: z.string(),
-    GOOGLE_CLIENT_SECRET: z.string(),
-    WORKER_BASE_URL: z.string(),
-    BACKEND_BASE_URL: z.string(),
+    // Core APIs - optional in dev, required in production
+    SUPERMEMORY_API_KEY: z.string().optional(),
+    GEMINI_API_KEY: z.string().optional(),
+    // Cloud sync features - optional
+    CLOUDFLARE_R2_TOKEN: z.string().optional(),
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    GOOGLE_CLIENT_SECRET: z.string().optional(),
+    WORKER_BASE_URL: z.string().optional(),
   },
 
   /**
@@ -42,14 +37,12 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
-    OPENROUTER_API_TOKEN: process.env.OPENROUTER_API_TOKEN,
-    KV_REST_API_URL: process.env.KV_REST_API_URL,
-    KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
+    SUPERMEMORY_API_KEY: process.env.SUPERMEMORY_API_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     CLOUDFLARE_R2_TOKEN: process.env.CLOUDFLARE_R2_TOKEN,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     WORKER_BASE_URL: process.env.WORKER_BASE_URL,
-    BACKEND_BASE_URL: process.env.BACKEND_BASE_URL,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

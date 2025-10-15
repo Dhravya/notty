@@ -1,77 +1,91 @@
-import OpenAI from "openai";
-import { OpenAIStream, StreamingTextResponse } from "ai";
-import { kv } from "@vercel/kv";
-import { Ratelimit } from "@upstash/ratelimit";
+import { streamText } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { env } from "@/env";
+import { auth } from "@/lib/auth";
 
-// Create an OpenAI API client (that's edge friendly!)
-const openai = new OpenAI({
-  apiKey: env.OPENROUTER_API_TOKEN,
-  // baseURL: "https://openrouter.ai/api/v1/",
-});
-
-// IMPORTANT! Set the runtime to edge: https://vercel.com/docs/functions/edge-functions/edge-runtime
+// IMPORTANT! Set the runtime to edge
 export const runtime = "edge";
 
 export async function POST(req: Request): Promise<Response> {
-  if (
-    env.KV_REST_API_URL &&
-    env.KV_REST_API_TOKEN
-  ) {
-    const ip = req.headers.get("x-forwarded-for");
-    const ratelimit = new Ratelimit({
-      redis: kv,
-      limiter: Ratelimit.slidingWindow(50, "1 d"),
-    });
-
-    const { success, limit, reset, remaining } = await ratelimit.limit(
-      `notty_ratelimit_${ip}`,
+  // Check if API keys are configured
+  if (!env.GEMINI_API_KEY) {
+    return new Response(
+      "API keys not configured. Please add GEMINI_API_KEY to your .env file.",
+      { status: 500 },
     );
-
-    if (!success) {
-      return new Response("You have reached your request limit for the day.", {
-        status: 429,
-        headers: {
-          "X-RateLimit-Limit": limit.toString(),
-          "X-RateLimit-Remaining": remaining.toString(),
-          "X-RateLimit-Reset": reset.toString(),
-        },
-      });
-    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const { prompt } = await req.json();
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo-1106",
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are an AI writing assistant that continues existing text based on context from prior text. " +
-          "Give more weight/priority to the later characters than the beginning ones. " +
-          "Limit your response to no more than 200 characters, but make sure to construct complete sentences. Just output in text format.",
-        // we're disabling markdown for now until we can figure out a way to stream markdown text with proper formatting: https://github.com/steven-tey/novel/discussions/7
-        // "Use Markdown formatting when appropriate.",
-      },
-      {
-        role: "user",
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        content: prompt,
-      },
-    ],
-    temperature: 0.7,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-    stream: true,
-    n: 1,
-  });
+  let contextFromNotes = "";
 
-  // Convert the response into a friendly text-stream
-  const stream = OpenAIStream(response);
+  // If Supermemory is configured and user is authenticated, get relevant notes as context
+  if (env.SUPERMEMORY_API_KEY) {
+    const user = await auth();
 
-  // Respond with the stream
-  return new StreamingTextResponse(stream);
+    if (user?.user?.email) {
+      try {
+        const Supermemory = (await import("supermemory")).default;
+        const supermemoryClient = new Supermemory({
+          apiKey: env.SUPERMEMORY_API_KEY,
+        });
+
+        // Search for relevant notes based on the prompt
+        const searchResponse = await supermemoryClient.search.execute({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          q: prompt,
+          limit: 3, // Get top 3 most relevant notes
+        });
+
+        // Extract content from search results
+        if (searchResponse.results && searchResponse.results.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+          const relevantContent = searchResponse.results
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+            .map((result: any) => result.content)
+            .join("\n\n");
+          contextFromNotes = `\n\nRelevant context from your notes:\n${relevantContent}`;
+        }
+      } catch (error) {
+        console.error("Error fetching context from Supermemory:", error);
+        // Continue without context if search fails
+      }
+    }
+  }
+
+  try {
+    // Create Google AI instance with explicit API key
+    const google = createGoogleGenerativeAI({
+      apiKey: env.GEMINI_API_KEY,
+    });
+
+    const result = await streamText({
+      model: google("gemini-2.0-flash-exp"),
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an AI writing assistant that continues existing text based on context from prior text. " +
+            "Give more weight/priority to the later characters than the beginning ones. " +
+            "Limit your response to no more than 200 characters, but make sure to construct complete sentences. " +
+            "Just output in text format.",
+        },
+        {
+          role: "user",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          content: prompt + contextFromNotes,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    return result.toTextStreamResponse();
+  } catch (error) {
+    console.error("Error generating completion:", error);
+    return new Response(
+      `Failed to generate completion: ${error instanceof Error ? error.message : "Unknown error"}`,
+      { status: 500 },
+    );
+  }
 }

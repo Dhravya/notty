@@ -35,14 +35,21 @@ function NewNoteButton() {
                     href={`/`}
                     className="fixed border bottom-5 left-5 z-10 flex max-h-fit gap-2 rounded-lg bg-white p-2 transition-colors duration-200 hover:bg-stone-100 sm:bottom-auto sm:top-5"
                 >
-                    <Image
-                        src="/logo.png"
-                        width={20}
-                        height={20}
-                        alt="logo"
-                        className='h-full w-full'
-                    />
-                    notty
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="h-6 w-6"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15.75 19.5L8.25 12l7.5-7.5"
+                        />
+                    </svg>
+                    Back
                 </a>
             )}
         </>

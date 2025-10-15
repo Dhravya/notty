@@ -5,7 +5,6 @@ import React, { useEffect, useState } from 'react'
 import {
     enable as enableDarkMode,
     disable as disableDarkMode,
-    auto as followSystemColorScheme,
     isEnabled as isDarkReaderEnabled,
 } from 'darkreader';
 
@@ -15,12 +14,8 @@ function DarkModeSwitch() {
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            followSystemColorScheme({
-                sepia: 10,
-            });
-            if (isDarkReaderEnabled()) {
-                setIsDark(true);
-            }
+            // Just sync the state with the current darkreader status
+            setIsDark(isDarkReaderEnabled());
         }
     }, [])
 
@@ -33,9 +28,11 @@ function DarkModeSwitch() {
                         sepia: 10,
                     });
                     setIsDark(true);
+                    localStorage.setItem('theme-preference', 'dark');
                 } else {
                     disableDarkMode();
                     setIsDark(false);
+                    localStorage.setItem('theme-preference', 'light');
                 }
             }}
         >

@@ -1,8 +1,7 @@
-import { kv } from "@vercel/kv";
-import { Ratelimit } from "@upstash/ratelimit";
 import { env } from "@/env";
 import { auth } from "@/lib/auth";
 import { getUserProfile, searchNotesInSupermemory } from "@/lib/supermemory";
+import { withRateLimit } from "@/lib/ratelimit";
 import { OpenAI } from "openai";
 
 export const runtime = "edge";
@@ -25,28 +24,17 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  // Rate limiting
-  if (env.KV_REST_API_URL && env.KV_REST_API_TOKEN) {
-    const ip = req.headers.get("x-forwarded-for");
-    const ratelimit = new Ratelimit({
-      redis: kv,
-      limiter: Ratelimit.slidingWindow(20, "1 h"),
+  // Check rate limit using Cloudflare Worker or Vercel KV
+  const rateLimit = await withRateLimit(req, "chat", user.user.email);
+  if (!rateLimit.success) {
+    return new Response("You have reached your request limit for the hour.", {
+      status: 429,
+      headers: {
+        "X-RateLimit-Limit": rateLimit.limit.toString(),
+        "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+        "X-RateLimit-Reset": rateLimit.reset.toString(),
+      },
     });
-
-    const { success, limit, reset, remaining } = await ratelimit.limit(
-      `notty_chat_ratelimit_${ip}`,
-    );
-
-    if (!success) {
-      return new Response("You have reached your request limit for the hour.", {
-        status: 429,
-        headers: {
-          "X-RateLimit-Limit": limit.toString(),
-          "X-RateLimit-Remaining": remaining.toString(),
-          "X-RateLimit-Reset": reset.toString(),
-        },
-      });
-    }
   }
 
   try {

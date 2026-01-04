@@ -1,0 +1,15 @@
+{
+  "name": "notty-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "kv:create": "wrangler kv:namespace create nottykv && wrangler kv:namespace create ratelimit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240129.0",
+    "wrangler": "^3.22.0"
+  }
+}

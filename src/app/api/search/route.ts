@@ -1,9 +1,7 @@
-import { kv } from "@vercel/kv";
-import { Ratelimit } from "@upstash/ratelimit";
-import { env } from "@/env";
 import { auth } from "@/lib/auth";
 import { type AiResponse } from "@/types/aiResponse";
 import { searchNotesInSupermemory } from "@/lib/supermemory";
+import { withRateLimit } from "@/lib/ratelimit";
 
 export const runtime = "edge";
 
@@ -17,30 +15,17 @@ export async function GET(req: Request): Promise<Response> {
         });
     }
 
-    if (
-        env.KV_REST_API_URL &&
-        env.KV_REST_API_TOKEN
-    ) {
-        const ip = req.headers.get("x-forwarded-for");
-        const ratelimit = new Ratelimit({
-            redis: kv,
-            limiter: Ratelimit.slidingWindow(50, "1 d"),
+    // Check rate limit using Cloudflare Worker or Vercel KV
+    const rateLimit = await withRateLimit(req, "search", user.user.email);
+    if (!rateLimit.success) {
+        return new Response("You have reached your request limit for the day.", {
+            status: 429,
+            headers: {
+                "X-RateLimit-Limit": rateLimit.limit.toString(),
+                "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+                "X-RateLimit-Reset": rateLimit.reset.toString(),
+            },
         });
-
-        const { success, limit, reset, remaining } = await ratelimit.limit(
-            `notty_ratelimit_${ip}`,
-        );
-
-        if (!success) {
-            return new Response("You have reached your request limit for the day.", {
-                status: 429,
-                headers: {
-                    "X-RateLimit-Limit": limit.toString(),
-                    "X-RateLimit-Remaining": remaining.toString(),
-                    "X-RateLimit-Reset": reset.toString(),
-                },
-            });
-        }
     }
 
     // Get prompt from query

@@ -24,6 +24,7 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: z.string(),
     WORKER_BASE_URL: z.string(),
     BACKEND_BASE_URL: z.string(),
+    SUPERMEMORY_API_KEY: z.string(),
   },
 
   /**
@@ -50,6 +51,7 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     WORKER_BASE_URL: process.env.WORKER_BASE_URL,
     BACKEND_BASE_URL: process.env.BACKEND_BASE_URL,
+    SUPERMEMORY_API_KEY: process.env.SUPERMEMORY_API_KEY,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

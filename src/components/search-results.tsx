@@ -30,7 +30,7 @@ export function SearchResults({ aiResponse }: { aiResponse: AiResponse }) {
     }} className="w-full max-w-2xl mx-auto px-4 py-6 space-y-6 border mt-4 rounded-xl">
       <div className="text-center">
         <h2 className="text-2xl font-bold">{aiResponse[0]}</h2>
-        <p className="text-gray-500">✨ AI Search using <a className="text-sky-500" href="https://embedchain.ai">Embedchain</a></p>
+        <p className="text-gray-500">✨ AI Search using <a className="text-sky-500" href="https://supermemory.ai">Supermemory</a></p>
       </div>
       <div className="grid gap-6">
         {aiResponse[1].map((value, index) => (

@@ -3,6 +3,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { env } from "@/env";
 import { auth } from "@/lib/auth";
 import { type AiResponse } from "@/types/aiResponse";
+import { searchNotesInSupermemory } from "@/lib/supermemory";
 
 export const runtime = "edge";
 
@@ -51,23 +52,39 @@ export async function GET(req: Request): Promise<Response> {
         });
     }
 
-    const aiResponse = await fetch(`${env.BACKEND_BASE_URL}/api/v1/search?query=${prompt}&user_id=${user.user.email}`, {
-        method: "GET",
-        headers: {
-            "Authorization": `${env.CLOUDFLARE_R2_TOKEN}`
-        }
-    });
+    try {
+        const searchResults = await searchNotesInSupermemory(prompt, user.user.email);
 
-    if (aiResponse.status !== 200) {
+        // Transform Supermemory response to match the expected AiResponse format
+        // Supermemory returns: { results: [{ id, memory/chunk, metadata, similarity, ... }] }
+        // Expected format: [summary_string, [[content, metadata], ...]]
+
+        const formattedResults: AiResponse = [
+            `Search results for: "${prompt}"`,
+            searchResults.results.map((result) => [
+                // Use 'memory' field for memory results, 'chunk' field for chunk results
+                result.memory || result.chunk || "",
+                {
+                    app_id: "notty-supermemory",
+                    data_type: "note",
+                    doc_id: result.id,
+                    hash: result.id,
+                    note_id: (result.metadata?.note_id as string) || "",
+                    url: "",
+                    user: user.user?.email || "",
+                    score: result.similarity,
+                },
+            ]),
+        ];
+
+        return new Response(JSON.stringify(formattedResults), {
+            status: 200,
+        });
+    } catch (error) {
+        console.error("Error searching with Supermemory:", error);
         return new Response("Failed to get search results", {
             status: 500,
         });
     }
-
-    const data = await aiResponse.json() as AiResponse;
-
-    return new Response(JSON.stringify(data), {
-        status: 200,
-    });
 
 }

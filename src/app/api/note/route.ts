@@ -5,6 +5,9 @@ import { addNoteToSupermemory } from "@/lib/supermemory";
 
 export const runtime = "edge";
 
+/**
+ * Save note to Durable Object (SQLite storage) and Supermemory
+ */
 export async function POST(req: Request): Promise<Response> {
   const user = await auth();
 
@@ -14,10 +17,8 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  // get request body
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await req.json();
-
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const { id, data } = body;
 
@@ -27,25 +28,28 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  const key = `${user.user.email}-${id}`;
-
-  // save to cloudflare
-  const putResponse = await fetch(`${env.WORKER_BASE_URL}?key=${key}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Custom-Auth-Key": env.CLOUDFLARE_R2_TOKEN,
-    },
-    body: JSON.stringify(data),
-  });
+  // Save to Durable Object (primary storage)
+  const putResponse = await fetch(
+    `${env.WORKER_BASE_URL}/do/?userId=${encodeURIComponent(user.user.email)}&id=${encodeURIComponent(id as string)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Custom-Auth-Key": env.CLOUDFLARE_R2_TOKEN,
+      },
+      body: JSON.stringify(data),
+    }
+  );
 
   if (putResponse.status !== 200) {
+    const error = await putResponse.text();
+    console.error("Failed to save to Durable Object:", error);
     return new Response("Failed to save", {
       status: 500,
     });
   }
 
-  // Add note to Supermemory for semantic search
+  // Add note to Supermemory for semantic search (async, don't block)
   try {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     await addNoteToSupermemory(
@@ -56,6 +60,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   } catch (error) {
     console.error("Error occurred while saving to Supermemory: ", error);
+    // Don't fail the request if Supermemory fails
   }
 
   return new Response("Saved", {
@@ -63,6 +68,9 @@ export async function POST(req: Request): Promise<Response> {
   });
 }
 
+/**
+ * Get note from Durable Object
+ */
 export async function GET(req: Request): Promise<Response> {
   const id = new URL(req.url).searchParams.get("id");
   const user = await auth();
@@ -78,15 +86,15 @@ export async function GET(req: Request): Promise<Response> {
     });
   }
 
-  const key = `${user.user.email}-${id}`;
-
-  // save to cloudflare
-  const getResponse = await fetch(`${env.WORKER_BASE_URL}?key=${key}`, {
-    method: "GET",
-    headers: {
-      "X-Custom-Auth-Key": env.CLOUDFLARE_R2_TOKEN,
-    },
-  });
+  const getResponse = await fetch(
+    `${env.WORKER_BASE_URL}/do/?userId=${encodeURIComponent(user.user.email)}&id=${encodeURIComponent(id)}`,
+    {
+      method: "GET",
+      headers: {
+        "X-Custom-Auth-Key": env.CLOUDFLARE_R2_TOKEN,
+      },
+    }
+  );
 
   if (getResponse.status !== 200) {
     return new Response(await getResponse.text(), {
@@ -102,6 +110,9 @@ export async function GET(req: Request): Promise<Response> {
   });
 }
 
+/**
+ * Delete note from Durable Object
+ */
 export async function DELETE(req: Request): Promise<Response> {
   const id = new URL(req.url).searchParams.get("id");
   const user = await auth();
@@ -117,18 +128,17 @@ export async function DELETE(req: Request): Promise<Response> {
     });
   }
 
-  const key = `${user.user.email}-${id}`;
-
-  // save to cloudflare
-  const deleteResponse = await fetch(`${env.WORKER_BASE_URL}?key=${key}`, {
-    method: "DELETE",
-    headers: {
-      "X-Custom-Auth-Key": env.CLOUDFLARE_R2_TOKEN,
-    },
-  });
+  const deleteResponse = await fetch(
+    `${env.WORKER_BASE_URL}/do/?userId=${encodeURIComponent(user.user.email)}&id=${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: {
+        "X-Custom-Auth-Key": env.CLOUDFLARE_R2_TOKEN,
+      },
+    }
+  );
 
   const data = await deleteResponse.text();
-  console.log(data);
   if (deleteResponse.status !== 200) {
     return new Response(data, {
       status: 404,

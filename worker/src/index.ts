@@ -1,4 +1,5 @@
 import { NotesSync } from './durable-objects';
+import { handleMigrationRequest } from './migrate';
 
 export { NotesSync };
 
@@ -199,6 +200,8 @@ export default {
 
       if (path.startsWith('/do/')) {
         response = await handleDurableObject(request, env);
+      } else if (path === '/migrate') {
+        response = await handleMigrationRequest(request, env);
       } else if (path === '/ratelimit') {
         response = await handleRateLimitCheck(request, env);
       } else {

@@ -1,0 +1,45 @@
+name = "notty-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-31"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Objects with SQLite Storage
+[[durable_objects.bindings]]
+name = "NOTES_SYNC"
+class_name = "NotesSync"
+script_name = "notty-worker"
+
+# Enable SQLite storage for Durable Objects
+# SQLite is automatically available in all new Durable Objects
+# No special configuration needed - it's the default!
+
+# Migrations for Durable Objects
+[[migrations]]
+tag = "v1"
+new_classes = ["NotesSync"]
+
+# KV Namespaces (for rate limiting and legacy backup)
+# To create: wrangler kv:namespace create "nottykv"
+# To create: wrangler kv:namespace create "ratelimit"
+kv_namespaces = [
+  { binding = "nottykv", id = "REPLACE_WITH_YOUR_NOTTYKV_ID" },
+  { binding = "ratelimit", id = "REPLACE_WITH_YOUR_RATELIMIT_ID" }
+]
+
+# Environment variables
+[vars]
+SECURITY_KEY = "REPLACE_WITH_SECURE_KEY_IN_PRODUCTION"
+
+# Preview/Development environment
+[env.dev]
+kv_namespaces = [
+  { binding = "nottykv", preview_id = "REPLACE_WITH_YOUR_PREVIEW_NOTTYKV_ID" },
+  { binding = "ratelimit", preview_id = "REPLACE_WITH_YOUR_PREVIEW_RATELIMIT_ID" }
+]
+
+# Build configuration
+[build]
+command = ""
+
+[build.upload]
+format = "service-worker"

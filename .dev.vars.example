@@ -1,0 +1,13 @@
+# Better Auth
+BETTER_AUTH_SECRET=your-secret-key-at-least-32-characters
+BETTER_AUTH_URL=http://localhost:5173
+
+# Google OAuth
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# OpenAI
+OPENAI_API_KEY=your-openai-api-key
+
+# Supermemory
+SUPERMEMORY_API_KEY=your-supermemory-api-key

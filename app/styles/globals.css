@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Tiptap Editor Styles */
+.tiptap {
+  @apply prose prose-stone max-w-none focus:outline-none;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  @apply text-stone-400 pointer-events-none float-left h-0;
+  content: attr(data-placeholder);
+}
+
+.tiptap h1 {
+  @apply text-3xl font-bold mt-6 mb-4;
+}
+
+.tiptap h2 {
+  @apply text-2xl font-semibold mt-5 mb-3;
+}
+
+.tiptap h3 {
+  @apply text-xl font-medium mt-4 mb-2;
+}
+
+.tiptap ul,
+.tiptap ol {
+  @apply pl-6 my-2;
+}
+
+.tiptap ul {
+  @apply list-disc;
+}
+
+.tiptap ol {
+  @apply list-decimal;
+}
+
+.tiptap li {
+  @apply my-1;
+}
+
+.tiptap ul[data-type="taskList"] {
+  @apply list-none pl-0;
+}
+
+.tiptap ul[data-type="taskList"] li {
+  @apply flex items-start gap-2;
+}
+
+.tiptap ul[data-type="taskList"] li input {
+  @apply mt-1;
+}
+
+.tiptap blockquote {
+  @apply border-l-4 border-stone-300 pl-4 italic my-4;
+}
+
+.tiptap code {
+  @apply bg-stone-100 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.tiptap pre {
+  @apply bg-stone-900 text-stone-100 p-4 rounded-lg my-4 overflow-x-auto;
+}
+
+.tiptap pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+
+.tiptap a {
+  @apply text-blue-600 underline underline-offset-2 hover:text-blue-800;
+}
+
+.tiptap mark {
+  @apply bg-yellow-200 px-0.5;
+}
+
+.tiptap hr {
+  @apply border-stone-200 my-6;
+}
+
+/* Collaboration cursor styles */
+.collaboration-cursor__caret {
+  @apply border-l-2 h-5 absolute pointer-events-none;
+}
+
+.collaboration-cursor__label {
+  @apply text-xs text-white px-1.5 py-0.5 rounded absolute top-0 left-0 -translate-y-full;
+  white-space: nowrap;
+}

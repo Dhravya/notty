@@ -55,7 +55,6 @@ app.get("/api/sync/:noteId", async (c) => {
 
 // React Router handler for all other routes
 app.all("*", async (c) => {
-  // @ts-expect-error - React Router types
   const handler = createRequestHandler(
     // @ts-expect-error - build import
     () => import("virtual:react-router/server-build"),

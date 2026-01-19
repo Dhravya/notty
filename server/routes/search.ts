@@ -117,9 +117,9 @@ app.get("/", async (c) => {
 
     return c.json({
       answer,
-      results: userResults.map((r: { content?: string; metadata?: { noteId?: string }; score?: number }) => ({
+      results: userResults.map((r) => ({
         content: r.content,
-        noteId: r.metadata?.noteId,
+        noteId: (r.metadata as { noteId?: string } | undefined)?.noteId,
         score: r.score,
       })),
     });

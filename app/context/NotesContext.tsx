@@ -1,11 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import type { NoteValue } from "@shared/types/note";
+
+type NoteItem = {
+  id: string;
+  title: string;
+  preview?: string;
+};
 
 type NotesContextValue = {
-  notes: [string, NoteValue][];
+  notes: [string, { title: string; preview?: string }][];
   loading: boolean;
   deleteNote: (keyToDelete: string) => Promise<void>;
-  revalidateNotes: () => Promise<[string, NoteValue][]>;
+  revalidateNotes: () => Promise<void>;
 };
 
 const NotesContext = createContext<NotesContextValue | null>(null);
@@ -21,7 +26,7 @@ export const useNotes = () => {
 };
 
 export const NotesProvider = ({ children }: { children: ReactNode }) => {
-  const [notes, setNotes] = useState<[string, NoteValue][]>([]);
+  const [notes, setNotes] = useState<[string, { title: string; preview?: string }][]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchLocalStorageData = useCallback(async () => {
@@ -30,16 +35,27 @@ export const NotesProvider = ({ children }: { children: ReactNode }) => {
     const entries = Object.entries(localStorage);
     const keyVal = entries
       .map(([key, value]) => {
-        if (value && key.length === 10 && key.match(/^\d+$/)) {
+        // Match note IDs (10-digit timestamps) or markdown note keys
+        if (key.startsWith("note-md-")) {
+          const id = key.replace("note-md-", "");
+          const lines = value.split("\n").filter((l: string) => l.trim());
+          const title = lines[0]?.replace(/^#+\s*/, "") || "Untitled";
+          const preview = lines.slice(1, 3).join(" ").substring(0, 100);
+          return [id, { title, preview }] as [string, { title: string; preview?: string }];
+        }
+        // Legacy JSON format
+        if (key.match(/^\d{10}$/)) {
           try {
-            return [key, JSON.parse(value)] as [string, NoteValue];
+            const data = JSON.parse(value);
+            const title = data.content?.[0]?.content?.[0]?.text || "Untitled";
+            return [key, { title }] as [string, { title: string; preview?: string }];
           } catch {
             return undefined;
           }
         }
         return undefined;
       })
-      .filter((kv): kv is [string, NoteValue] => kv !== undefined);
+      .filter((kv): kv is [string, { title: string; preview?: string }] => kv !== undefined);
 
     return keyVal;
   }, []);
@@ -50,8 +66,8 @@ export const NotesProvider = ({ children }: { children: ReactNode }) => {
       if (response.status !== 200) {
         return [];
       }
-      const data = await response.json();
-      return data as [string, NoteValue][];
+      const data: NoteItem[] = await response.json();
+      return data.map((note) => [note.id, { title: note.title, preview: note.preview }] as [string, { title: string; preview?: string }]);
     } catch (error) {
       console.error("Error fetching cloud data:", error);
       return [];
@@ -66,26 +82,18 @@ export const NotesProvider = ({ children }: { children: ReactNode }) => {
       fetchCloudData(),
     ]);
 
-    // Process cloud data to match local data format
-    const processedCloudData = cloudData?.map(([key, value]) => {
-      const id = key.split("-").pop();
-      return [id, value] as [string, NoteValue];
-    }) || [];
-
-    const newData = [...localData, ...processedCloudData]
+    const allData = [...localData, ...cloudData]
       .filter(([_, value]) => value !== null)
       .sort((a, b) => Number(b[0]) - Number(a[0]));
 
     // Deduplicate by key
-    const uniqueKeys = Array.from(new Set(newData.map(([key]) => key)));
+    const uniqueKeys = Array.from(new Set(allData.map(([key]) => key)));
     const uniqueData = uniqueKeys.map((key) => {
-      return newData.find(([k]) => k === key)!;
+      return allData.find(([k]) => k === key)!;
     });
 
     setNotes(uniqueData);
     setLoading(false);
-
-    return uniqueData;
   }, [fetchLocalStorageData, fetchCloudData]);
 
   useEffect(() => {
@@ -96,11 +104,18 @@ export const NotesProvider = ({ children }: { children: ReactNode }) => {
     if (typeof window === "undefined") return;
 
     // Archive locally
-    const newKey = "archived-" + keyToDelete;
-    const value = localStorage.getItem(keyToDelete);
-    if (value) {
+    const mdKey = `note-md-${keyToDelete}`;
+    const mdValue = localStorage.getItem(mdKey);
+    if (mdValue) {
+      localStorage.removeItem(mdKey);
+      localStorage.setItem(`archived-${mdKey}`, mdValue);
+    }
+
+    // Legacy format
+    const legacyValue = localStorage.getItem(keyToDelete);
+    if (legacyValue) {
       localStorage.removeItem(keyToDelete);
-      localStorage.setItem(newKey, value);
+      localStorage.setItem(`archived-${keyToDelete}`, legacyValue);
     }
 
     // Delete from cloud
@@ -116,7 +131,7 @@ export const NotesProvider = ({ children }: { children: ReactNode }) => {
   }, [combineData]);
 
   const revalidateNotes = useCallback(async () => {
-    return await combineData();
+    await combineData();
   }, [combineData]);
 
   return (

@@ -14,31 +14,53 @@
   }
 }
 
-/* Tiptap Editor Styles */
-.tiptap {
-  @apply prose prose-stone max-w-none focus:outline-none;
+/* Base styles */
+body {
+  @apply bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100;
 }
 
-.tiptap p.is-editor-empty:first-child::before {
-  @apply text-stone-400 pointer-events-none float-left h-0;
+/* Tiptap Editor Styles */
+.tiptap {
+  @apply focus:outline-none max-w-none;
+}
+
+.tiptap > * + * {
+  @apply mt-3;
+}
+
+/* Placeholder styles */
+.tiptap p.is-editor-empty:first-child::before,
+.tiptap h1.is-empty:first-child::before {
+  @apply text-stone-400 dark:text-gray-500 pointer-events-none float-left h-0;
   content: attr(data-placeholder);
 }
 
+/* Headings */
 .tiptap h1 {
-  @apply text-3xl font-bold mt-6 mb-4;
+  @apply text-3xl font-bold mt-8 mb-4 text-gray-900 dark:text-white;
+}
+
+.tiptap h1:first-child {
+  @apply mt-0;
 }
 
 .tiptap h2 {
-  @apply text-2xl font-semibold mt-5 mb-3;
+  @apply text-2xl font-semibold mt-6 mb-3 text-gray-800 dark:text-gray-100;
 }
 
 .tiptap h3 {
-  @apply text-xl font-medium mt-4 mb-2;
+  @apply text-xl font-medium mt-5 mb-2 text-gray-800 dark:text-gray-200;
 }
 
+/* Paragraphs */
+.tiptap p {
+  @apply text-gray-700 dark:text-gray-300 leading-relaxed;
+}
+
+/* Lists */
 .tiptap ul,
 .tiptap ol {
-  @apply pl-6 my-2;
+  @apply pl-6 my-3;
 }
 
 .tiptap ul {
@@ -50,9 +72,14 @@
 }
 
 .tiptap li {
-  @apply my-1;
+  @apply my-1.5 text-gray-700 dark:text-gray-300;
 }
 
+.tiptap li p {
+  @apply my-0;
+}
+
+/* Task Lists */
 .tiptap ul[data-type="taskList"] {
   @apply list-none pl-0;
 }
@@ -62,35 +89,57 @@
 }
 
 .tiptap ul[data-type="taskList"] li input {
-  @apply mt-1;
+  @apply mt-1.5 accent-blue-500;
 }
 
+.tiptap ul[data-type="taskList"] li > div {
+  @apply flex-1;
+}
+
+/* Blockquotes */
 .tiptap blockquote {
-  @apply border-l-4 border-stone-300 pl-4 italic my-4;
+  @apply border-l-4 border-stone-300 dark:border-gray-600 pl-4 italic my-4 text-gray-600 dark:text-gray-400;
 }
 
+/* Code */
 .tiptap code {
-  @apply bg-stone-100 px-1.5 py-0.5 rounded text-sm font-mono;
+  @apply bg-stone-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm font-mono text-rose-600 dark:text-rose-400;
 }
 
 .tiptap pre {
-  @apply bg-stone-900 text-stone-100 p-4 rounded-lg my-4 overflow-x-auto;
+  @apply bg-stone-900 dark:bg-gray-950 text-stone-100 p-4 rounded-lg my-4 overflow-x-auto border dark:border-gray-800;
 }
 
 .tiptap pre code {
   @apply bg-transparent p-0 text-inherit;
 }
 
+/* Links */
 .tiptap a {
-  @apply text-blue-600 underline underline-offset-2 hover:text-blue-800;
+  @apply text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-800 dark:hover:text-blue-300 transition-colors;
 }
 
+/* Marks */
 .tiptap mark {
-  @apply bg-yellow-200 px-0.5;
+  @apply bg-yellow-200 dark:bg-yellow-900/50 px-0.5 rounded;
 }
 
+.tiptap strong {
+  @apply font-semibold text-gray-900 dark:text-white;
+}
+
+.tiptap em {
+  @apply italic;
+}
+
+/* Horizontal Rule */
 .tiptap hr {
-  @apply border-stone-200 my-6;
+  @apply border-stone-200 dark:border-gray-700 my-8;
+}
+
+/* Selection */
+.tiptap ::selection {
+  @apply bg-blue-200 dark:bg-blue-900;
 }
 
 /* Collaboration cursor styles */
@@ -99,6 +148,40 @@
 }
 
 .collaboration-cursor__label {
-  @apply text-xs text-white px-1.5 py-0.5 rounded absolute top-0 left-0 -translate-y-full;
-  white-space: nowrap;
+  @apply text-xs text-white px-1.5 py-0.5 rounded absolute top-0 left-0 -translate-y-full whitespace-nowrap;
+}
+
+/* Custom scrollbar for dark mode */
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-700 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-600;
+  }
+}
+
+/* Focus ring for accessibility */
+.tiptap:focus-visible {
+  @apply outline-none;
+}
+
+/* Animation for AI generating indicator */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.ai-generating {
+  animation: pulse-subtle 1.5s ease-in-out infinite;
 }

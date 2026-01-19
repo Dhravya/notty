@@ -1,25 +1,14 @@
-import { cloudflare } from "@cloudflare/vite-plugin";
 import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig } from "vite";
+import path from "path";
 
 export default defineConfig({
-  plugins: [
-    cloudflare({
-      viteEnvironment: { name: "ssr" },
-    }),
-    reactRouter(),
-  ],
-  ssr: {
-    target: "webworker",
-    noExternal: true,
-    resolve: {
-      conditions: ["workerd", "browser"],
-    },
-  },
+  plugins: [reactRouter()],
   resolve: {
-    mainFields: ["browser", "module", "main"],
-  },
-  build: {
-    minify: true,
+    alias: {
+      "~": path.resolve(__dirname, "./app"),
+      "@server": path.resolve(__dirname, "./server"),
+      "@shared": path.resolve(__dirname, "./shared"),
+    },
   },
 });

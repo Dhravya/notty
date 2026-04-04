@@ -1,0 +1,38 @@
+{
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "Notty",
+    "version": "0.1.0",
+    "identifier": "dev.notty.app",
+    "build": {
+        "frontendDist": "../dist/client",
+        "devUrl": "http://localhost:5173",
+        "beforeDevCommand": "bunx vite --port 5173",
+        "beforeBuildCommand": "bunx vite build"
+    },
+    "plugins": {
+        "deep-link": {
+            "desktop": {
+                "schemes": ["notty"]
+            }
+        }
+    },
+    "app": {
+        "windows": [
+            {
+                "title": "Notty",
+                "width": 1000,
+                "height": 700,
+                "minWidth": 600,
+                "minHeight": 400
+            }
+        ],
+        "security": {
+            "csp": null
+        }
+    },
+    "bundle": {
+        "active": true,
+        "targets": "all",
+        "icon": ["icons/icon.png"]
+    }
+}

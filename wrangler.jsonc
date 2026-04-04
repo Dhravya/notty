@@ -1,0 +1,52 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "notty-v2",
+	"main": "src/server/index.ts",
+	"build": {
+		"command": "bun scripts/bundle-env.ts && bunx vite build",
+		"watch_dir": "src"
+	},
+	"compatibility_date": "2026-04-02",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": "dist/client",
+		"html_handling": "none",
+		"not_found_handling": "none",
+		"run_worker_first": true
+	},
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "AUTH_DO",
+				"class_name": "AuthDurableObject"
+			},
+			{
+				"name": "USER_NOTES_DO",
+				"class_name": "UserNotesDurableObject"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["AuthDurableObject", "UserNotesDurableObject"]
+		}
+	],
+	"routes": [
+		{ "pattern": "notty.dhr.wtf", "custom_domain": true },
+		{ "pattern": "notty.page", "custom_domain": true },
+		{ "pattern": "*.notty.page/*", "zone_name": "notty.page" }
+	],
+	"vars": {
+		"BASE_DOMAIN": "notty.page"
+	}
+
+}

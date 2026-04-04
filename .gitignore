@@ -1,29 +1,21 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-wrangler.toml
-sw.js
-sw.js.map
-workbox-*.js
-workbox-*.js.map
-
-embedchain-backend/db/
-embedchain-backend/env/
-
+dist/
 # dependencies
 /node_modules
 /.pnp
-.pnp.js
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
 # testing
 /coverage
 
-# database
-/prisma/db.sqlite
-/prisma/db.sqlite-journal
-
 # next.js
 /.next/
 /out/
-next-env.d.ts
 
 # production
 /build
@@ -38,17 +30,33 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# local env files
-# do not commit any .env files to git, except for the .env.example file. https://create.t3.gg/en/usage/env-variables#using-environment-variables
-.env
+# env files
+.env.keys
 .env*.local
+!.env
+!.env.example
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
+next-env.d.ts
 
-certificates
-embedchain-backend/venv
-**/__pycache__/*
+# OpenNext
+/.open-next
+
+# wrangler files
+.wrangler
+.dev.vars*
+
+
+!.dev.vars.example
+.wrangler-state/
+src/server/env.generated.ts
+
+# Tauri
+src-tauri/target/
+
+# Claude
+.claude/settings.local.json

@@ -3,7 +3,7 @@ export type DesktopSettings = {
 };
 
 const DEFAULTS: DesktopSettings = {
-    cloudUrl: "http://localhost:8787",
+    cloudUrl: "",
 };
 
 export async function getDesktopSettings(): Promise<DesktopSettings> {

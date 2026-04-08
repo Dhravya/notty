@@ -8,6 +8,7 @@ import { useNotes } from "@/context/notes-context";
 import { useFolders } from "@/context/folders-context";
 import { useHotkeys } from "@/lib/hotkeys";
 import { useIsDark } from "@/lib/dark-mode";
+import { OfflineBanner } from "@/components/sync-status";
 
 type SortMode = "recent" | "created";
 type ViewMode = "grid" | "timeline";
@@ -230,6 +231,7 @@ export function HomePage() {
                     )}
                 </div>
             </div>
+            <OfflineBanner />
         </AppLayout>
     );
 }

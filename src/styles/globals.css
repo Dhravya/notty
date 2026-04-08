@@ -218,3 +218,10 @@ body::before {
     scrollbar-width: none;
 }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* Offline banner entrance */
+@keyframes in-up {
+    from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.animate-in-up { animation: in-up 0.3s ease-out; }

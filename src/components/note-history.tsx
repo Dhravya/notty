@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
-import { History, RotateCcw, X, Eye, GitBranch, Plus, Trash2, GitMerge } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { History, RotateCcw, X, Eye, GitBranch, Plus, Trash2, GitMerge, Check } from "lucide-react";
 import { useAdapter } from "@/context/adapter-context";
-import { GitTree } from "./git-tree";
 import type { NoteVersion, NoteBranch, NoteTree } from "@/lib/adapter";
 
 function formatTime(ts: number): string {
@@ -15,7 +14,7 @@ function formatTime(ts: number): string {
     const sameYear = d.getFullYear() === now.getFullYear();
     return d.toLocaleDateString("en-US", {
         month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }),
-    }) + " " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    }) + ", " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
 function jsonToText(content: string): string {
@@ -51,6 +50,11 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
     return result;
 }
 
+function versionLabel(v: NoteVersion, index: number, total: number) {
+    if (index === total - 1) return "Base";
+    return `v${total - index - 1}`;
+}
+
 export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentReset, onClose }: {
     noteId: string;
     currentContent: string;
@@ -62,11 +66,13 @@ export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentRes
     const [tree, setTree] = useState<NoteTree | null>(null);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState<NoteVersion | null>(null);
+    const [parentContent, setParentContent] = useState<string | null>(null);
     const [loadingVersion, setLoadingVersion] = useState(false);
     const [restoring, setRestoring] = useState(false);
     const [showDiff, setShowDiff] = useState(true);
     const [newBranchName, setNewBranchName] = useState("");
     const [showNewBranch, setShowNewBranch] = useState(false);
+    const branchInputRef = useRef<HTMLInputElement>(null);
 
     const loadTree = useCallback(() => {
         adapter.getNoteTree(noteId).then((t) => {
@@ -77,11 +83,23 @@ export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentRes
 
     useEffect(() => { loadTree(); }, [loadTree]);
 
-    const handleSelectVersion = async (versionId: string) => {
-        if (selected?.id === versionId && selected.content) return;
+    useEffect(() => {
+        if (showNewBranch) branchInputRef.current?.focus();
+    }, [showNewBranch]);
+
+    const handleSelectVersion = async (version: NoteVersion) => {
+        if (selected?.id === version.id && selected.content) return;
         setLoadingVersion(true);
-        const full = await adapter.getVersion(noteId, versionId);
-        if (full) setSelected(full);
+        setParentContent(null);
+        const full = await adapter.getVersion(noteId, version.id);
+        if (full) {
+            setSelected(full);
+            // fetch parent content for proper diff
+            if (version.parent_id) {
+                const parent = await adapter.getVersion(noteId, version.parent_id);
+                if (parent?.content) setParentContent(parent.content);
+            }
+        }
         setLoadingVersion(false);
     };
 
@@ -89,11 +107,11 @@ export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentRes
         if (!selected) return;
         setRestoring(true);
         try {
-            saveGuardRef.current = true; // block saves before API call
+            saveGuardRef.current = true;
             await adapter.restoreVersion(noteId, selected.id);
             await onContentReset();
         } catch (e) {
-            saveGuardRef.current = false; // re-enable on failure
+            saveGuardRef.current = false;
             console.error("Restore failed:", e);
         }
         setRestoring(false);
@@ -143,133 +161,186 @@ export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentRes
     const branches = tree?.branches || [];
     const versions = tree?.versions || [];
     const currentBranch = branches.find((b) => b.is_current);
-    const syncMode = tree?.sync_mode || "cloud";
+    const headIds = new Set(branches.map((b) => b.head_version_id).filter(Boolean));
 
-    const currentText = jsonToText(currentContent);
+    // Diff: show what this version introduced (parent → selected)
     const selectedText = selected?.content ? jsonToText(selected.content) : "";
-    const diff = selected?.content ? computeDiff(selectedText, currentText) : [];
+    const baseText = parentContent ? jsonToText(parentContent) : "";
+    const diff = selected?.content
+        ? parentContent
+            ? computeDiff(baseText, selectedText)
+            : [] // no parent = base version, no diff to show
+        : [];
+
+    const hasChanges = diff.some(l => l.type !== "same");
 
     return (
         <div className="fixed inset-0 z-50 flex">
-            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
 
             <div className="relative ml-auto w-full max-w-3xl bg-[var(--color-paper)] border-l border-[var(--color-border-warm)] shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-200">
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--color-border-warm)]">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border-warm)]">
                     <div className="flex items-center gap-2.5">
-                        <History size={16} className="text-[var(--color-ink-muted)]" />
-                        <h2 className="text-sm font-semibold text-[var(--color-ink)]">Version Control</h2>
-                        {currentBranch && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-mono font-medium">
-                                {currentBranch.name}
-                            </span>
-                        )}
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-                            syncMode === "cloud"
-                                ? "bg-emerald-500/10 text-emerald-600"
-                                : "bg-amber-500/10 text-amber-600"
-                        }`}>
-                            {syncMode === "cloud" ? "synced" : "local"}
-                        </span>
+                        <History size={15} className="text-[var(--color-ink-muted)]" />
+                        <h2 className="text-sm font-semibold text-[var(--color-ink)]">History</h2>
                     </div>
                     <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--color-sidebar-active)] transition-colors">
-                        <X size={16} className="text-[var(--color-ink-muted)]" />
+                        <X size={15} className="text-[var(--color-ink-muted)]" />
                     </button>
                 </div>
 
                 <div className="flex flex-1 overflow-hidden">
-                    {/* Left: Tree + Branches */}
-                    <div className="w-56 border-r border-[var(--color-border-warm)] flex flex-col overflow-hidden flex-shrink-0">
-                        {/* Branch list */}
-                        <div className="px-3 py-2.5 border-b border-[var(--color-border-warm)]">
-                            <div className="flex items-center justify-between mb-2">
+                    {/* Left sidebar: branches + versions */}
+                    <div className="w-60 border-r border-[var(--color-border-warm)] flex flex-col overflow-hidden flex-shrink-0">
+                        {/* Branches */}
+                        <div className="px-3 pt-3 pb-2 border-b border-[var(--color-border-warm)]">
+                            <div className="flex items-center justify-between mb-1.5">
                                 <span className="text-[10px] font-semibold text-[var(--color-ink-muted)] uppercase tracking-wider">Branches</span>
                                 <button
-                                    onClick={() => setShowNewBranch(!showNewBranch)}
+                                    onClick={() => { setShowNewBranch(!showNewBranch); setNewBranchName(""); }}
                                     className="p-1 rounded hover:bg-[var(--color-sidebar-active)] transition-colors"
                                     title="New branch"
                                 >
-                                    <Plus size={12} className="text-[var(--color-ink-muted)]" />
+                                    {showNewBranch ? <X size={12} className="text-[var(--color-ink-muted)]" /> : <Plus size={12} className="text-[var(--color-ink-muted)]" />}
                                 </button>
                             </div>
 
                             {showNewBranch && (
-                                <div className="flex gap-1 mb-2">
+                                <div className="relative mb-2">
                                     <input
+                                        ref={branchInputRef}
                                         type="text"
                                         value={newBranchName}
                                         onChange={(e) => setNewBranchName(e.target.value)}
-                                        onKeyDown={(e) => e.key === "Enter" && handleCreateBranch()}
-                                        placeholder="branch-name"
-                                        className="flex-1 text-xs px-2 py-1 rounded border border-[var(--color-border-warm)] bg-[var(--color-paper)] text-[var(--color-ink)] font-mono focus:outline-none focus:border-[var(--color-accent)]"
-                                        autoFocus
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") handleCreateBranch();
+                                            if (e.key === "Escape") { setShowNewBranch(false); setNewBranchName(""); }
+                                        }}
+                                        placeholder="new-branch-name"
+                                        className="w-full text-xs px-2.5 py-1.5 pr-8 rounded-md border border-[var(--color-accent)]/40 bg-[var(--color-paper)] text-[var(--color-ink)] font-mono focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/20"
                                     />
-                                    <button
-                                        onClick={handleCreateBranch}
-                                        className="text-xs px-2 py-1 rounded bg-[var(--color-accent)] text-white"
-                                    >
-                                        Create
-                                    </button>
+                                    {newBranchName.trim() && (
+                                        <button
+                                            onClick={handleCreateBranch}
+                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors"
+                                        >
+                                            <Check size={14} />
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
-                            {branches.map((branch) => (
-                                <div
-                                    key={branch.id}
-                                    className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs group transition-colors ${
-                                        branch.is_current
-                                            ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
-                                            : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] cursor-pointer"
-                                    }`}
-                                    onClick={() => !branch.is_current && handleCheckout(branch)}
-                                >
-                                    <div className="flex items-center gap-1.5 font-mono truncate min-w-0">
-                                        <GitBranch size={11} className="shrink-0" />
-                                        <span className="truncate">{branch.name}</span>
-                                        {branch.is_current === 1 && (
-                                            <span className="text-[8px] font-sans opacity-60 shrink-0">HEAD</span>
-                                        )}
-                                    </div>
-                                    {!branch.is_current && (
-                                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleMerge(branch); }}
-                                                className="p-0.5 rounded hover:text-[var(--color-accent)] transition-colors"
-                                                title={`Merge ${branch.name} into ${currentBranch?.name || "current"}`}
-                                            >
-                                                <GitMerge size={10} />
-                                            </button>
-                                            {!branch.is_default && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleDeleteBranch(branch); }}
-                                                    className="p-0.5 rounded hover:text-red-500 transition-colors"
-                                                    title="Delete branch"
-                                                >
-                                                    <Trash2 size={10} />
-                                                </button>
+                            <div className="space-y-0.5">
+                                {branches.map((branch) => (
+                                    <div
+                                        key={branch.id}
+                                        className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs group transition-colors ${
+                                            branch.is_current
+                                                ? "bg-[var(--color-accent)]/8 text-[var(--color-accent)]"
+                                                : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] cursor-pointer"
+                                        }`}
+                                        onClick={() => !branch.is_current && handleCheckout(branch)}
+                                    >
+                                        <div className="flex items-center gap-1.5 font-mono truncate min-w-0">
+                                            <GitBranch size={11} className="shrink-0" />
+                                            <span className="truncate">{branch.name}</span>
+                                            {branch.is_current === 1 && (
+                                                <span className="text-[9px] font-sans opacity-50 shrink-0">current</span>
                                             )}
                                         </div>
-                                    )}
-                                </div>
-                            ))}
+                                        {!branch.is_current && (
+                                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleMerge(branch); }}
+                                                    className="p-0.5 rounded hover:text-[var(--color-accent)] transition-colors"
+                                                    title={`Merge into ${currentBranch?.name || "current"}`}
+                                                >
+                                                    <GitMerge size={11} />
+                                                </button>
+                                                {!branch.is_default && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleDeleteBranch(branch); }}
+                                                        className="p-0.5 rounded hover:text-red-500 transition-colors"
+                                                        title="Delete branch"
+                                                    >
+                                                        <Trash2 size={11} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
-                        {/* Git tree graph */}
-                        <div className="flex-1 overflow-y-auto overflow-x-auto px-1 py-2">
+                        {/* Version timeline */}
+                        <div className="flex-1 overflow-y-auto px-3 py-2">
+                            <span className="text-[10px] font-semibold text-[var(--color-ink-muted)] uppercase tracking-wider mb-2 block">
+                                Versions
+                            </span>
                             {loading ? (
-                                <div className="p-3 text-xs text-[var(--color-ink-muted)]">Loading...</div>
+                                <div className="py-4 text-xs text-[var(--color-ink-muted)] text-center">Loading...</div>
                             ) : versions.length === 0 ? (
-                                <div className="p-3 text-xs text-[var(--color-ink-muted)]">
-                                    No history yet
-                                </div>
+                                <div className="py-4 text-xs text-[var(--color-ink-muted)] text-center">No history yet</div>
                             ) : (
-                                <GitTree
-                                    versions={versions}
-                                    branches={branches}
-                                    syncMode={syncMode}
-                                    selectedId={selected?.id}
-                                    onSelect={handleSelectVersion}
-                                />
+                                <div className="relative">
+                                    {/* Timeline line */}
+                                    <div className="absolute left-[7px] top-2 bottom-2 w-px bg-[var(--color-border-warm)]" />
+
+                                    <div className="space-y-0.5">
+                                        {versions.map((v, i) => {
+                                            const isSelected = v.id === selected?.id;
+                                            const isHead = headIds.has(v.id);
+                                            const label = versionLabel(v, i, versions.length);
+                                            const isOnCurrentBranch = v.branch_id === currentBranch?.id;
+
+                                            return (
+                                                <button
+                                                    key={v.id}
+                                                    onClick={() => handleSelectVersion(v)}
+                                                    className={`relative w-full text-left pl-6 pr-2 py-1.5 rounded-md transition-colors group ${
+                                                        isSelected
+                                                            ? "bg-[var(--color-accent)]/8"
+                                                            : "hover:bg-[var(--color-sidebar-active)]"
+                                                    }`}
+                                                >
+                                                    {/* Timeline dot */}
+                                                    <div className={`absolute left-[4px] top-1/2 -translate-y-1/2 w-[7px] h-[7px] rounded-full border-[1.5px] transition-colors ${
+                                                        isSelected
+                                                            ? "border-[var(--color-accent)] bg-[var(--color-accent)]"
+                                                            : isHead
+                                                                ? "border-[var(--color-accent)] bg-[var(--color-paper)]"
+                                                                : isOnCurrentBranch
+                                                                    ? "border-[var(--color-ink-muted)]/40 bg-[var(--color-paper)]"
+                                                                    : "border-[var(--color-ink-muted)]/25 bg-[var(--color-paper)]"
+                                                    }`} />
+
+                                                    <div className="flex items-baseline justify-between gap-2">
+                                                        <div className="flex items-baseline gap-1.5 min-w-0">
+                                                            <span className={`text-[11px] font-mono shrink-0 ${
+                                                                isSelected ? "text-[var(--color-accent)] font-semibold" : "text-[var(--color-ink)] font-medium"
+                                                            }`}>
+                                                                {label}
+                                                            </span>
+                                                            <span className="text-[10px] text-[var(--color-ink-muted)] font-mono truncate">
+                                                                {v.id.slice(0, 7)}
+                                                            </span>
+                                                        </div>
+                                                        {isHead && (
+                                                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-medium shrink-0">
+                                                                HEAD
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-[10px] text-[var(--color-ink-muted)] mt-0.5">
+                                                        {formatTime(v.created_at)}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -278,50 +349,42 @@ export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentRes
                     <div className="flex-1 overflow-y-auto flex flex-col">
                         {!selected ? (
                             <div className="flex flex-col items-center justify-center h-full text-sm text-[var(--color-ink-muted)] gap-2">
-                                <GitBranch size={24} className="opacity-30" />
-                                <span>Click a version in the tree to inspect</span>
+                                <History size={20} className="opacity-20" />
+                                <span className="text-xs">Select a version to inspect</span>
                             </div>
                         ) : loadingVersion ? (
-                            <div className="flex items-center justify-center h-full text-sm text-[var(--color-ink-muted)]">
-                                Reconstructing...
+                            <div className="flex items-center justify-center h-full text-xs text-[var(--color-ink-muted)]">
+                                Loading version...
                             </div>
                         ) : (
                             <>
                                 {/* Version info bar */}
-                                <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border-warm)] bg-[var(--color-card)]">
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex flex-col">
-                                            <span className="text-xs font-medium text-[var(--color-ink)]">
-                                                {formatTime(selected.created_at)}
-                                            </span>
-                                            <span className="text-[10px] text-[var(--color-ink-muted)]">
-                                                {selected.title}
-                                                {selected.created_by && selected.created_by !== "system" && (
-                                                    <> &middot; {selected.created_by === "auto-backup" ? "pre-restore" :
-                                                     selected.created_by === "restore" ? "restored" :
-                                                     selected.created_by}</>
-                                                )}
-                                                {selected.is_checkpoint ? " (checkpoint)" : ""}
-                                            </span>
-                                        </div>
+                                <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border-warm)]">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xs font-medium text-[var(--color-ink)]">
+                                            {selected.title}
+                                        </span>
+                                        <span className="text-[10px] text-[var(--color-ink-muted)]">
+                                            {formatTime(selected.created_at)}
+                                        </span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="flex items-center gap-1 bg-[var(--color-paper)] rounded-md border border-[var(--color-border-warm)]">
+                                        <div className="flex items-center bg-[var(--color-paper)] rounded-md border border-[var(--color-border-warm)] p-0.5">
                                             <button
                                                 onClick={() => setShowDiff(true)}
-                                                className={`text-[10px] px-2 py-1 rounded-md transition-colors ${
-                                                    showDiff ? "bg-[var(--color-ink)] text-[var(--color-paper)]" : "text-[var(--color-ink-muted)]"
+                                                className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+                                                    showDiff ? "bg-[var(--color-ink)] text-[var(--color-paper)]" : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
                                                 }`}
                                             >
                                                 Diff
                                             </button>
                                             <button
                                                 onClick={() => setShowDiff(false)}
-                                                className={`text-[10px] px-2 py-1 rounded-md transition-colors flex items-center gap-0.5 ${
-                                                    !showDiff ? "bg-[var(--color-ink)] text-[var(--color-paper)]" : "text-[var(--color-ink-muted)]"
+                                                className={`text-[10px] px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
+                                                    !showDiff ? "bg-[var(--color-ink)] text-[var(--color-paper)]" : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
                                                 }`}
                                             >
-                                                <Eye size={10} /> Raw
+                                                <Eye size={10} /> Content
                                             </button>
                                         </div>
                                         <button
@@ -330,17 +393,21 @@ export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentRes
                                             className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-lg bg-[var(--color-accent)] text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
                                         >
                                             <RotateCcw size={10} />
-                                            {restoring ? "Restoring..." : "Restore"}
+                                            {restoring ? "Restoring..." : "Restore this version"}
                                         </button>
                                     </div>
                                 </div>
 
-                                {/* Diff / preview content */}
+                                {/* Content */}
                                 <div className="flex-1 overflow-y-auto p-4">
                                     {showDiff ? (
                                         <div className="font-mono text-[11px] leading-relaxed">
-                                            {diff.length === 0 ? (
-                                                <div className="text-[var(--color-ink-muted)]">Identical to current</div>
+                                            {!parentContent ? (
+                                                <div className="text-[var(--color-ink-muted)] text-xs">
+                                                    This is the base version — no previous version to diff against.
+                                                </div>
+                                            ) : !hasChanges ? (
+                                                <div className="text-[var(--color-ink-muted)] text-xs">No changes in this version.</div>
                                             ) : diff.map((line, i) => (
                                                 <div
                                                     key={i}

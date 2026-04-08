@@ -132,7 +132,7 @@ export function HomePage() {
 
     const createAndNavigate = useCallback(() => {
         const id = crypto.randomUUID();
-        navigate(`/note/${id}${selectedFolderId ? `?folder=${selectedFolderId}` : ""}`);
+        navigate(`/note/${id}${selectedFolderId ? `?folder=${selectedFolderId}` : ""}`, { viewTransition: true });
     }, [navigate, selectedFolderId]);
 
     useEffect(() => {
@@ -184,7 +184,7 @@ export function HomePage() {
         { key: "arrowdown", handler: () => setSelectedIndex((i) => Math.min(i + 1, totalItems - 1)) },
         { key: "k", handler: () => setSelectedIndex((i) => Math.max(i - 1, 0)) },
         { key: "arrowup", handler: () => setSelectedIndex((i) => Math.max(i - 1, 0)) },
-        { key: "enter", handler: () => { if (sorted[selectedIndex]) navigate(`/note/${sorted[selectedIndex].id}`); } },
+        { key: "enter", handler: () => { if (sorted[selectedIndex]) navigate(`/note/${sorted[selectedIndex].id}`, { viewTransition: true }); } },
         { key: "x", handler: () => { if (sorted[selectedIndex]) { deleteNote(sorted[selectedIndex].id); setSelectedIndex((i) => Math.max(i - 1, 0)); } } },
         { key: "v", handler: () => setViewMode(viewMode === "grid" ? "timeline" : "grid") },
         { key: "s", handler: () => setSortMode((m) => m === "recent" ? "created" : "recent") },

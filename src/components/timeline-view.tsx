@@ -178,7 +178,7 @@ function NoteTimelineEntry({ note, folder, isSelected, flatIdx, onSelect, onDele
     const preview = extractPreview(note.content);
 
     return (
-        <Link to={`/note/${note.id}`} className="block group" data-note-index={flatIdx} onClick={() => onSelect?.(flatIdx)}>
+        <Link to={`/note/${note.id}`} viewTransition className="block group" data-note-index={flatIdx} onClick={() => onSelect?.(flatIdx)}>
             <div
                 className={`rounded-l-md rounded-r-2xl p-4 sm:p-5 transition-all duration-150 hover:bg-[var(--color-sidebar-active)] ${
                     isSelected ? "ring-[3px] ring-[var(--color-accent)] bg-[var(--color-sidebar-active)] shadow-[0_0_0_1px_var(--color-accent),0_4px_20px_rgba(42,161,152,0.25)]" : ""

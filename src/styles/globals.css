@@ -226,6 +226,18 @@ body::before {
     animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Page-level crossfade for route transitions */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 0.2s;
+    animation-timing-function: ease;
+}
+
+/* Note card → note page morph */
+[style*="view-transition-name: note-"] {
+    contain: layout;
+}
+
 /* Offline banner entrance */
 @keyframes in-up {
     from { opacity: 0; transform: translateX(-50%) translateY(12px); }

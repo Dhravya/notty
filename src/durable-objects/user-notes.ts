@@ -3,6 +3,7 @@ import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
+import { createPatch, applyPatch } from "../lib/diff";
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -52,6 +53,38 @@ export class UserNotesDurableObject extends DurableObject {
             migrate("ALTER TABLE notes ADD COLUMN published INTEGER NOT NULL DEFAULT 0");
             migrate("ALTER TABLE notes ADD COLUMN published_at INTEGER");
             migrate("ALTER TABLE folders ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+
+            // Git-style versioning: checkpoints (full content) + patches (diffs)
+            this.sql.exec(`
+                CREATE TABLE IF NOT EXISTS note_versions (
+                    id TEXT PRIMARY KEY,
+                    note_id TEXT NOT NULL,
+                    parent_id TEXT,
+                    title TEXT NOT NULL,
+                    is_checkpoint INTEGER NOT NULL DEFAULT 0,
+                    data TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT 'system',
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+                )
+            `);
+            this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_versions_note_time ON note_versions(note_id, created_at DESC)`);
+            this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_versions_parent ON note_versions(parent_id)`);
+            migrate("ALTER TABLE note_versions ADD COLUMN branch_id TEXT");
+
+            // Branches — like git refs, just named pointers to version heads
+            this.sql.exec(`
+                CREATE TABLE IF NOT EXISTS note_branches (
+                    id TEXT PRIMARY KEY,
+                    note_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    head_version_id TEXT,
+                    is_default INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    UNIQUE(note_id, name)
+                )
+            `);
+            migrate("ALTER TABLE notes ADD COLUMN current_branch_id TEXT");
         });
     }
 
@@ -84,6 +117,117 @@ export class UserNotesDurableObject extends DurableObject {
 
         this.docs.set(noteId, doc);
         return doc;
+    }
+
+    private readonly CHECKPOINT_INTERVAL = 20;
+
+    // --- Branch helpers ---
+
+    private ensureDefaultBranch(noteId: string): { id: string; name: string; head_version_id: string | null } {
+        const existing = this.sql.exec(
+            "SELECT id, name, head_version_id FROM note_branches WHERE note_id = ? AND is_default = 1", noteId
+        ).toArray()[0] as any;
+        if (existing) return existing;
+
+        const id = crypto.randomUUID();
+        this.sql.exec(
+            "INSERT INTO note_branches (id, note_id, name, is_default) VALUES (?, ?, 'main', 1)", id, noteId
+        );
+        this.sql.exec(
+            "UPDATE notes SET current_branch_id = ? WHERE id = ? AND current_branch_id IS NULL", id, noteId
+        );
+        return { id, name: "main", head_version_id: null };
+    }
+
+    private getCurrentBranch(noteId: string): { id: string; name: string; head_version_id: string | null } {
+        const note = this.getNote(noteId);
+        if (note?.current_branch_id) {
+            const branch = this.sql.exec(
+                "SELECT id, name, head_version_id FROM note_branches WHERE id = ?", note.current_branch_id
+            ).toArray()[0] as any;
+            if (branch) return branch;
+        }
+        return this.ensureDefaultBranch(noteId);
+    }
+
+    // --- Version creation (branch-aware) ---
+
+    private createVersion(noteId: string, title: string, content: string, createdBy = "system") {
+        const branch = this.getCurrentBranch(noteId);
+        const parentId = branch.head_version_id;
+
+        const id = crypto.randomUUID();
+
+        // Count versions on this branch since last checkpoint
+        let sinceCheckpoint = 0;
+        if (parentId) {
+            const count = this.sql.exec(
+                `SELECT COUNT(*) as c FROM note_versions
+                 WHERE branch_id = ? AND created_at >= COALESCE(
+                     (SELECT created_at FROM note_versions WHERE branch_id = ? AND is_checkpoint = 1 ORDER BY created_at DESC LIMIT 1),
+                     0
+                 )`, branch.id, branch.id
+            ).toArray()[0] as { c: number };
+            sinceCheckpoint = count?.c ?? 0;
+        }
+
+        const needsCheckpoint = !parentId || sinceCheckpoint >= this.CHECKPOINT_INTERVAL;
+
+        if (needsCheckpoint) {
+            this.sql.exec(
+                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+                id, noteId, parentId, branch.id, title, content, createdBy
+            );
+        } else {
+            const parentContent = this.reconstructVersion(parentId!, noteId);
+            const patch = createPatch(parentContent, content);
+            if (patch === '[]') return;
+            this.sql.exec(
+                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+                id, noteId, parentId, branch.id, title, patch, createdBy
+            );
+        }
+
+        // Advance branch HEAD
+        this.sql.exec("UPDATE note_branches SET head_version_id = ? WHERE id = ?", id, branch.id);
+
+        // Prune old versions (keep 100 per note across all branches)
+        this.sql.exec(`
+            DELETE FROM note_versions WHERE note_id = ? AND id NOT IN (
+                SELECT id FROM note_versions WHERE note_id = ? ORDER BY created_at DESC LIMIT 100
+            )
+        `, noteId, noteId);
+    }
+
+    // Walk back to nearest checkpoint, then apply patches forward to reconstruct content
+    private reconstructVersion(versionId: string, noteId: string): string {
+        // Collect chain from target back to a checkpoint
+        const chain: { id: string; data: string; is_checkpoint: number; parent_id: string | null }[] = [];
+        let currentId: string | null = versionId;
+
+        while (currentId) {
+            const row = this.sql.exec(
+                "SELECT id, data, is_checkpoint, parent_id FROM note_versions WHERE id = ?", currentId
+            ).toArray()[0] as any;
+            if (!row) break;
+            chain.unshift(row);
+            if (row.is_checkpoint) break;
+            currentId = row.parent_id;
+        }
+
+        if (chain.length === 0) return '';
+        if (!chain[0].is_checkpoint) {
+            // No checkpoint found in chain — fall back to current note content
+            const note = this.getNote(noteId);
+            return (note?.content as string) || '';
+        }
+
+        // First entry is a checkpoint (full content), rest are patches
+        let content = chain[0].data;
+        for (let i = 1; i < chain.length; i++) {
+            content = applyPatch(content, chain[i].data);
+        }
+        return content;
     }
 
     private flushPendingSave(noteId: string) {
@@ -168,11 +312,13 @@ export class UserNotesDurableObject extends DurableObject {
                     body.sync_mode !== undefined ? body.sync_mode : existing.sync_mode,
                     id
                 );
+                if (body.content) this.createVersion(id, body.title || "Untitled", body.content);
             } else {
                 this.sql.exec(
                     `INSERT INTO notes (id, title, content, folder_id, sync_mode, updated_at) VALUES (?, ?, ?, ?, ?, unixepoch())`,
                     id, body.title || "Untitled", body.content || "", body.folder_id ?? null, body.sync_mode || "cloud"
                 );
+                if (body.content) this.createVersion(id, body.title || "Untitled", body.content);
             }
             const note = this.getNote(id);
             this.broadcastJson({ type: "note-updated", note });
@@ -237,6 +383,176 @@ export class UserNotesDurableObject extends DurableObject {
             return new Response(null, { status: rows.length > 0 ? 200 : 404 });
         }
 
+        // --- Branches ---
+        if (request.method === "GET" && path.match(/^\/notes\/[^/]+\/branches$/)) {
+            const noteId = path.split("/")[2];
+            this.ensureDefaultBranch(noteId);
+            const branches = this.sql.exec(
+                "SELECT id, name, head_version_id, is_default, created_at FROM note_branches WHERE note_id = ? ORDER BY is_default DESC, created_at",
+                noteId
+            ).toArray();
+            const current = this.getCurrentBranch(noteId);
+            return Response.json(branches.map((b: any) => ({ ...b, is_current: b.id === current.id ? 1 : 0 })));
+        }
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/branches$/)) {
+            const noteId = path.split("/")[2];
+            const { name } = (await request.json()) as { name: string };
+            if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+                return new Response("Invalid branch name", { status: 400 });
+            }
+            // Branch from current branch HEAD
+            const current = this.getCurrentBranch(noteId);
+            const id = crypto.randomUUID();
+            try {
+                this.sql.exec(
+                    "INSERT INTO note_branches (id, note_id, name, head_version_id) VALUES (?, ?, ?, ?)",
+                    id, noteId, name, current.head_version_id
+                );
+            } catch (e: any) {
+                if (e.message?.includes("UNIQUE")) return new Response("Branch already exists", { status: 409 });
+                throw e;
+            }
+            return Response.json({ id, name, head_version_id: current.head_version_id });
+        }
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/branches\/checkout$/)) {
+            const noteId = path.split("/")[2];
+            const { branch_id } = (await request.json()) as { branch_id: string };
+            const branch = this.sql.exec(
+                "SELECT id, name, head_version_id FROM note_branches WHERE id = ? AND note_id = ?", branch_id, noteId
+            ).toArray()[0] as any;
+            if (!branch) return new Response("Branch not found", { status: 404 });
+
+            // Switch current branch
+            this.sql.exec("UPDATE notes SET current_branch_id = ?, updated_at = unixepoch() WHERE id = ?", branch_id, noteId);
+
+            // Load branch HEAD content
+            let content = "";
+            if (branch.head_version_id) {
+                content = this.reconstructVersion(branch.head_version_id, noteId);
+            }
+
+            // Update note content to branch HEAD
+            if (content) {
+                this.sql.exec("UPDATE notes SET content = ?, updated_at = unixepoch() WHERE id = ?", content, noteId);
+            }
+
+            // Evict Yjs doc so editor reloads with branch content
+            const doc = this.docs.get(noteId);
+            if (doc) {
+                this.docs.delete(noteId);
+                const timer = this.saveTimers.get(noteId);
+                if (timer) { clearTimeout(timer); this.saveTimers.delete(noteId); }
+            }
+
+            return Response.json({ branch: branch.name, content });
+        }
+        if (request.method === "DELETE" && path.match(/^\/notes\/[^/]+\/branches\/[^/]+$/)) {
+            const parts = path.split("/");
+            const noteId = parts[2];
+            const branchId = parts[4];
+            // Can't delete default branch
+            const branch = this.sql.exec(
+                "SELECT is_default FROM note_branches WHERE id = ? AND note_id = ?", branchId, noteId
+            ).toArray()[0] as any;
+            if (!branch) return new Response("Branch not found", { status: 404 });
+            if (branch.is_default) return new Response("Cannot delete default branch", { status: 400 });
+
+            // If deleting the current branch, switch to default
+            const note = this.getNote(noteId);
+            if (note?.current_branch_id === branchId) {
+                const def = this.ensureDefaultBranch(noteId);
+                this.sql.exec("UPDATE notes SET current_branch_id = ? WHERE id = ?", def.id, noteId);
+            }
+
+            this.sql.exec("DELETE FROM note_branches WHERE id = ?", branchId);
+            return Response.json({ ok: true });
+        }
+
+        // --- Tree (full graph for visualization) ---
+        if (request.method === "GET" && path.match(/^\/notes\/[^/]+\/tree$/)) {
+            const noteId = path.split("/")[2];
+            this.ensureDefaultBranch(noteId);
+            const branches = this.sql.exec(
+                "SELECT id, name, head_version_id, is_default, created_at FROM note_branches WHERE note_id = ?", noteId
+            ).toArray();
+            const current = this.getCurrentBranch(noteId);
+            const versions = this.sql.exec(
+                `SELECT id, parent_id, branch_id, title, is_checkpoint, created_by, created_at FROM note_versions
+                 WHERE note_id = ? ORDER BY created_at DESC LIMIT 100`, noteId
+            ).toArray();
+            const note = this.getNote(noteId);
+            return Response.json({
+                branches: branches.map((b: any) => ({ ...b, is_current: b.id === current.id ? 1 : 0 })),
+                versions,
+                sync_mode: note?.sync_mode || "cloud",
+            });
+        }
+
+        // Note history — git-style version list
+        if (request.method === "GET" && path.match(/^\/notes\/[^/]+\/history$/)) {
+            const noteId = path.split("/")[2];
+            const rows = this.sql.exec(
+                `SELECT id, note_id, title, is_checkpoint, branch_id, created_by, created_at FROM note_versions
+                 WHERE note_id = ? ORDER BY created_at DESC LIMIT 100`, noteId
+            ).toArray();
+            return Response.json(rows);
+        }
+        // Reconstruct a specific version's full content
+        if (request.method === "GET" && path.match(/^\/notes\/[^/]+\/history\/[^/]+$/)) {
+            const parts = path.split("/");
+            const noteId = parts[2];
+            const versionId = parts[4];
+            const row = this.sql.exec(
+                "SELECT id, note_id, title, is_checkpoint, created_by, created_at FROM note_versions WHERE id = ? AND note_id = ?",
+                versionId, noteId
+            ).toArray()[0];
+            if (!row) return new Response("Version not found", { status: 404 });
+            const content = this.reconstructVersion(versionId, noteId);
+            return Response.json({ ...row, content });
+        }
+        // Restore to a specific version
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/history\/restore$/)) {
+            const noteId = path.split("/")[2];
+            const { version_id } = (await request.json()) as { version_id: string };
+            const row = this.sql.exec(
+                "SELECT id FROM note_versions WHERE id = ? AND note_id = ?", version_id, noteId
+            ).toArray()[0];
+            if (!row) return new Response("Version not found", { status: 404 });
+
+            const restoredContent = this.reconstructVersion(version_id, noteId);
+
+            // Version the current state before restoring (so restore itself is reversible)
+            const current = this.getNote(noteId);
+            if (current?.content) {
+                this.createVersion(noteId, current.title || "Untitled", current.content as string, "auto-backup");
+            }
+
+            // Apply the restored content
+            const restoredTitle = (this.sql.exec(
+                "SELECT title FROM note_versions WHERE id = ?", version_id
+            ).toArray()[0] as any)?.title || "Untitled";
+
+            this.sql.exec(
+                "UPDATE notes SET title = ?, content = ?, updated_at = unixepoch() WHERE id = ?",
+                restoredTitle, restoredContent, noteId
+            );
+
+            // Create a new version for the restore itself
+            this.createVersion(noteId, restoredTitle, restoredContent, "restore");
+
+            // Evict cached Yjs doc so collaborators get fresh content
+            const doc = this.docs.get(noteId);
+            if (doc) {
+                this.docs.delete(noteId);
+                const timer = this.saveTimers.get(noteId);
+                if (timer) { clearTimeout(timer); this.saveTimers.delete(noteId); }
+            }
+
+            const note = this.getNote(noteId);
+            this.broadcastJson({ type: "note-restored", note });
+            return Response.json(note);
+        }
+
         // Public notes (no auth required — used by public page renderer)
         if (request.method === "GET" && path === "/public-notes") {
             const rows = this.sql.exec(
@@ -273,6 +589,10 @@ export class UserNotesDurableObject extends DurableObject {
                      ON CONFLICT(id) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = unixepoch()`,
                     id, title || "Untitled", content || ""
                 );
+                if (content) {
+                    const userId = this.ctx.getTags(ws).find((t) => t.startsWith("user:"))?.slice(5) || "unknown";
+                    this.createVersion(id, title || "Untitled", content, userId);
+                }
                 const note = this.getNote(id);
                 this.broadcastJson({ type: "note-updated", note }, ws);
             }
@@ -336,7 +656,7 @@ export class UserNotesDurableObject extends DurableObject {
 
     private getNote(id: string) {
         const rows = this.sql
-            .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, created_at, updated_at FROM notes WHERE id = ?", id)
+            .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, current_branch_id, created_at, updated_at FROM notes WHERE id = ?", id)
             .toArray();
         return rows[0] || null;
     }

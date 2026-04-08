@@ -43,6 +43,32 @@ export type Profile = {
     colorMode: "light" | "dark";
 };
 
+export type NoteVersion = {
+    id: string;
+    note_id: string;
+    title: string;
+    is_checkpoint: number;
+    branch_id?: string;
+    content?: string;
+    created_by: string;
+    created_at: number;
+};
+
+export type NoteBranch = {
+    id: string;
+    name: string;
+    head_version_id: string | null;
+    is_default: number;
+    is_current: number;
+    created_at: number;
+};
+
+export type NoteTree = {
+    branches: NoteBranch[];
+    versions: NoteVersion[];
+    sync_mode: string;
+};
+
 export type Folder = {
     id: string;
     name: string;
@@ -89,6 +115,18 @@ export interface NottyAdapter {
     lockNote(noteId: string): Promise<void>;
     unlockNote(noteId: string, lockToken: string): Promise<void>;
     verifyLock(noteId: string): Promise<{ lockToken: string }>;
+
+    // History (git-style versioning)
+    getNoteHistory(noteId: string): Promise<NoteVersion[]>;
+    getVersion(noteId: string, versionId: string): Promise<NoteVersion | null>;
+    restoreVersion(noteId: string, versionId: string): Promise<Note | null>;
+
+    // Branches
+    getBranches(noteId: string): Promise<NoteBranch[]>;
+    createBranch(noteId: string, name: string): Promise<NoteBranch>;
+    checkoutBranch(noteId: string, branchId: string): Promise<{ branch: string; content: string }>;
+    deleteBranch(noteId: string, branchId: string): Promise<void>;
+    getNoteTree(noteId: string): Promise<NoteTree>;
 
     // Publishing
     publishNote(noteId: string, published: boolean): Promise<void>;

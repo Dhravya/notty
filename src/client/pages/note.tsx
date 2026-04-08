@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
-import { ArrowLeft, LayoutGrid, Share2, Lock, Unlock } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Share2, Lock, Unlock, History, GitBranch } from "lucide-react";
 import { Editor } from "@/components/editor";
 import { CommandPalette } from "@/components/command-palette";
 import { ShortcutsHelp } from "@/components/shortcuts-help";
 import { ShareDialog } from "@/components/share-dialog";
 import { LockVerify } from "@/components/lock-verify";
 import { PublishToggle } from "@/components/publish-toggle";
+import { NoteHistory } from "@/components/note-history";
 import { useNotes } from "@/context/notes-context";
 import { useAdapter } from "@/context/adapter-context";
 import { useAuth } from "@/context/auth-context";
@@ -27,6 +28,8 @@ export function NotePage() {
 
     const [showControls, setShowControls] = useState(true);
     const [showShare, setShowShare] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+    const [editorKey, setEditorKey] = useState(0); // bump to force editor re-mount on branch switch
     const [lockToken, setLockToken] = useState<string | null>(null);
     const [noteState, setNoteState] = useState<"checking" | "locked" | "ready" | "not-found">("checking");
     const [noteMeta, setNoteMeta] = useState<any>(null);
@@ -217,6 +220,18 @@ export function NotePage() {
                         )
                     )}
 
+                    {/* Version control — owner only */}
+                    {isOwner && (
+                        <button
+                            onClick={() => setShowHistory(true)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs hover:text-[var(--color-ink)] hover:bg-[var(--color-sidebar-active)] transition-colors"
+                            title="Version control & branches"
+                        >
+                            <GitBranch size={13} />
+                            <span className="hidden sm:inline font-mono text-[10px]">history</span>
+                        </button>
+                    )}
+
                     {/* Share button — owner only */}
                     {isOwner && (
                         <button
@@ -241,11 +256,26 @@ export function NotePage() {
             {/* Editor */}
             <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-14 sm:pt-16 pb-16 sm:pb-24">
                 <div className="bg-[var(--color-card)] border border-[var(--color-border-warm)] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04),0_12px_32px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),0_12px_32px_rgba(0,0,0,0.2)] min-h-[85vh]">
-                    <Editor key={id} noteId={id} shareToken={shareToken} readOnly={isViewOnly} folderId={folderId} />
+                    <Editor key={`${id}-${editorKey}`} noteId={id} shareToken={shareToken} readOnly={isViewOnly} folderId={folderId} />
                 </div>
             </div>
 
             {showShare && <ShareDialog noteId={id} onClose={() => setShowShare(false)} />}
+            {showHistory && (
+                <NoteHistory
+                    noteId={id}
+                    currentContent={note?.content || ""}
+                    onRestore={() => {
+                        setShowHistory(false);
+                        setEditorKey((k) => k + 1);
+                    }}
+                    onBranchSwitch={() => {
+                        setShowHistory(false);
+                        setEditorKey((k) => k + 1);
+                    }}
+                    onClose={() => setShowHistory(false)}
+                />
+            )}
             <CommandPalette />
             <ShortcutsHelp />
         </div>

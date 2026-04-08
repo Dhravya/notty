@@ -12,6 +12,8 @@ import { NotePage } from "./pages/note";
 import { AuthPasskeyPage } from "./pages/auth-passkey";
 import { SharedResolvePage } from "./pages/shared-resolve";
 import { PublicSettingsPage } from "./pages/public-settings";
+import { TrashPage } from "./pages/trash";
+import { Toaster } from "sonner";
 import "@/styles/globals.css";
 
 const isTauri = "__TAURI_INTERNALS__" in window;
@@ -39,20 +41,29 @@ getAdapter().then((adapter) => {
                     <AuthProvider>
                         <NotesProvider>
                             <FoldersProvider>
-                            <MediaProvider>
-                                <Routes>
-                                    <Route path="/" element={<HomePage />} />
-                                    <Route path="/note/:id" element={<NotePage />} />
-                                    <Route path="/auth/passkey" element={<AuthPasskeyPage />} />
-                                    <Route path="/shared/:token" element={<SharedResolvePage />} />
-                                    <Route path="/settings/public" element={<PublicSettingsPage />} />
-                                </Routes>
-                            </MediaProvider>
+                                <MediaProvider>
+                                    <Routes>
+                                        <Route path="/" element={<HomePage />} />
+                                        <Route path="/trash" element={<TrashPage />} />
+                                        <Route path="/note/:id" element={<NotePage />} />
+                                        <Route path="/auth/passkey" element={<AuthPasskeyPage />} />
+                                        <Route path="/shared/:token" element={<SharedResolvePage />} />
+                                        <Route path="/settings/public" element={<PublicSettingsPage />} />
+                                    </Routes>
+                                </MediaProvider>
                             </FoldersProvider>
                         </NotesProvider>
                     </AuthProvider>
                 </AdapterProvider>
             </BrowserRouter>
+            <Toaster position="bottom-center" toastOptions={{
+                style: {
+                    fontFamily: "inherit",
+                    background: "var(--color-card)",
+                    color: "var(--color-ink)",
+                    border: "1px solid var(--color-border-warm)",
+                },
+            }} />
         </StrictMode>
     );
 });

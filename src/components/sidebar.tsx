@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useLocation } from "react-router";
 import { useFolders } from "@/context/folders-context";
 import { useNotes } from "@/context/notes-context";
 import { useAdapter } from "@/context/adapter-context";
@@ -15,21 +15,22 @@ const FOLDER_COLORS = [
 
 export function Sidebar() {
     const navigate = useNavigate();
+    const location = useLocation();
     const { folders, selectedFolderId, selectFolder, createFolder, deleteFolder, renameFolder } = useFolders();
-    const { notes } = useNotes();
+    const { notes, trash } = useNotes();
     const adapter = useAdapter();
     const { user } = useAuth();
     const [sharedNotes, setSharedNotes] = useState<SharedNote[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState("");
+    const [creatingFolder, setCreatingFolder] = useState<{ step: "name" | "color"; name: string } | null>(null);
+    const editRef = useRef<HTMLInputElement>(null);
+    const createRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (!user) return;
         adapter.getSharedWithMe().then(setSharedNotes).catch(() => {});
     }, [user, adapter]);
-    const [editValue, setEditValue] = useState("");
-    const [creatingFolder, setCreatingFolder] = useState<{ step: "name" | "color"; name: string } | null>(null);
-    const editRef = useRef<HTMLInputElement>(null);
-    const createRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (editingId && editRef.current) editRef.current.focus();
@@ -85,13 +86,31 @@ export function Sidebar() {
                 <button
                     onClick={() => { selectFolder(null); navigate("/"); }}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-colors duration-150 ${
-                        selectedFolderId === null
+                        selectedFolderId === null && location.pathname !== "/trash"
                             ? "bg-[var(--color-sidebar-active)] text-[var(--color-ink)] font-medium"
                             : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)]/60"
                     }`}
                 >
                     <span>All Notes</span>
                     <span className="text-[11px] tabular-nums text-[var(--color-ink-muted)]">{notes.length}</span>
+                </button>
+                <button
+                    onClick={() => { selectFolder(null); navigate("/trash"); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-colors duration-150 ${
+                        location.pathname === "/trash"
+                            ? "bg-[var(--color-sidebar-active)] text-[var(--color-ink)] font-medium"
+                            : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)]/60"
+                    }`}
+                >
+                    <span className="flex items-center gap-2">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                        Trash
+                    </span>
+                    {trash.length > 0 && (
+                        <span className="text-[11px] tabular-nums text-[var(--color-ink-muted)]">{trash.length}</span>
+                    )}
                 </button>
             </nav>
 

@@ -210,23 +210,17 @@ app.get("/api/auth/exchange-token", async (c) => {
     });
 });
 
-// --- Auth middleware for /api/notes and /api/folders ---
-app.use("/api/notes/*", async (c, next) => {
+const requireAuth = async (c: any, next: any) => {
     const session = await getSession(c.env, c.req.raw);
     if (!session) return c.text("Unauthorized", 401);
     c.set("userId", session.user.id);
     c.set("userName", session.user.name || "Anonymous");
     c.set("userStub", c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(session.user.id)));
     return next();
-});
-app.use("/api/folders/*", async (c, next) => {
-    const session = await getSession(c.env, c.req.raw);
-    if (!session) return c.text("Unauthorized", 401);
-    c.set("userId", session.user.id);
-    c.set("userName", session.user.name || "Anonymous");
-    c.set("userStub", c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(session.user.id)));
-    return next();
-});
+};
+app.use("/api/notes/*", requireAuth);
+app.use("/api/notes-trash", requireAuth);
+app.use("/api/folders/*", requireAuth);
 
 // --- Notes API ---
 app.get("/api/notes", (c) => c.var.userStub.fetch(new Request("https://do/notes")));
@@ -294,6 +288,15 @@ app.delete("/api/notes/:id", async (c) => {
     return c.var.userStub.fetch(new Request(`https://do/notes/${id}`, { method: "DELETE" }));
 });
 
+// Trash
+app.get("/api/notes-trash", (c) => c.var.userStub.fetch(new Request("https://do/notes/trash")));
+app.post("/api/notes/:id/restore", (c) =>
+    c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/restore`, { method: "POST" }))
+);
+app.delete("/api/notes/:id/permanent", (c) =>
+    c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/permanent`, { method: "DELETE" }))
+);
+
 // --- Branches ---
 app.get("/api/notes/:id/branches", (c) =>
     c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/branches`))
@@ -320,11 +323,10 @@ app.get("/api/notes/:id/tree", (c) =>
 );
 
 // --- Note History ---
-app.get("/api/notes/:id/history", async (c) => {
-    const id = c.req.param("id");
-    return c.var.userStub.fetch(new Request(`https://do/notes/${id}/history`));
-});
-app.get("/api/notes/:id/history/:versionId", async (c) => {
+app.get("/api/notes/:id/history", (c) =>
+    c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/history`))
+);
+app.get("/api/notes/:id/history/:versionId", (c) => {
     const { id, versionId } = c.req.param();
     return c.var.userStub.fetch(new Request(`https://do/notes/${id}/history/${versionId}`));
 });
@@ -563,22 +565,8 @@ app.get("/api/profile", async (c) => {
 });
 
 // --- Media API ---
-app.use("/api/media/*", async (c, next) => {
-    const session = await getSession(c.env, c.req.raw);
-    if (!session) return c.text("Unauthorized", 401);
-    c.set("userId", session.user.id);
-    c.set("userName", session.user.name || "Anonymous");
-    c.set("userStub", c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(session.user.id)));
-    return next();
-});
-app.use("/api/media", async (c, next) => {
-    const session = await getSession(c.env, c.req.raw);
-    if (!session) return c.text("Unauthorized", 401);
-    c.set("userId", session.user.id);
-    c.set("userName", session.user.name || "Anonymous");
-    c.set("userStub", c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(session.user.id)));
-    return next();
-});
+app.use("/api/media/*", requireAuth);
+app.use("/api/media", requireAuth);
 
 app.get("/api/media", (c) => c.var.userStub.fetch(new Request("https://do/media")));
 
@@ -603,7 +591,6 @@ app.post("/api/media", async (c) => {
 
     const type = file.type.startsWith("video/") ? "video" : "image";
 
-    // Parse dimensions from form data (client can extract these)
     const width = parseInt(formData.get("width") as string) || undefined;
     const height = parseInt(formData.get("height") as string) || undefined;
 
@@ -633,9 +620,7 @@ app.post("/api/media/:id/publish", async (c) => {
     }));
 });
 
-// Serve media files from R2
 app.get("/api/media/:id/file", async (c) => {
-    // Get metadata from DO
     const session = await getSession(c.env, c.req.raw);
     if (!session) return c.text("Unauthorized", 401);
 

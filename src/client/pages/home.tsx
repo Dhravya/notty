@@ -335,7 +335,19 @@ export function HomePage() {
 
                     {/* Content */}
                     {loading ? (
-                        <div className="text-center py-20 text-[var(--color-ink-muted)] text-sm">Loading...</div>
+                        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-5">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                                <div key={i} className="rounded-l-md rounded-r-2xl overflow-hidden min-h-[180px] flex flex-col bg-[var(--color-card)] border border-[var(--color-border-warm)]">
+                                    <div className="px-4 pt-4 pb-1.5"><div className="skeleton h-4 w-12" /></div>
+                                    <div className="px-4 pb-1.5"><div className="skeleton h-5 w-3/4" /></div>
+                                    <div className="px-4 pb-3 flex-1 space-y-2 pt-1">
+                                        <div className="skeleton h-3 w-full" />
+                                        <div className="skeleton h-3 w-5/6" />
+                                    </div>
+                                    <div className="px-4 pb-3.5 pt-2"><div className="skeleton h-3 w-16" /></div>
+                                </div>
+                            ))}
+                        </div>
                     ) : totalItems === 0 ? (
                         <div className="text-center py-24">
                             <p className="font-serif italic text-2xl text-[var(--color-ink-muted)] mb-3">

@@ -229,13 +229,25 @@ body::before {
 /* Page-level crossfade for route transitions */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-    animation-duration: 0.2s;
+    animation-duration: 0.15s;
     animation-timing-function: ease;
 }
 
 /* Note card → note page morph */
 [style*="view-transition-name: note-"] {
     contain: layout;
+}
+
+/* Shimmer skeleton */
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+.skeleton {
+    background: linear-gradient(90deg, var(--color-border-warm) 25%, color-mix(in srgb, var(--color-border-warm) 50%, var(--color-card)) 50%, var(--color-border-warm) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 0.375rem;
 }
 
 /* Offline banner entrance */

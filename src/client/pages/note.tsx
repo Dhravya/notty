@@ -173,8 +173,19 @@ export function NotePage() {
 
     if (noteState === "checking") {
         return (
-            <div className="min-h-screen bg-[var(--color-paper)] flex items-center justify-center">
-                <div className="text-sm text-[var(--color-ink-muted)]">Loading...</div>
+            <div className="min-h-screen bg-[var(--color-paper)]" style={{ viewTransitionName: `note-${id}` }}>
+                <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-14 sm:pt-16 pb-16 sm:pb-24">
+                    <div className="bg-[var(--color-card)] border border-[var(--color-border-warm)] rounded-2xl min-h-[85vh] p-6 sm:p-10">
+                        <div className="skeleton h-8 w-48 mb-6" />
+                        <div className="space-y-3">
+                            <div className="skeleton h-4 w-full" />
+                            <div className="skeleton h-4 w-5/6" />
+                            <div className="skeleton h-4 w-4/6" />
+                            <div className="skeleton h-4 w-full mt-6" />
+                            <div className="skeleton h-4 w-3/4" />
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }

@@ -50,6 +50,7 @@ export type NoteVersion = {
     title: string;
     is_checkpoint: number;
     branch_id?: string;
+    parent_id?: string | null;
     content?: string;
     created_by: string;
     created_at: number;

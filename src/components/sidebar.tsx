@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useLocation } from "react-router";
 import { useFolders } from "@/context/folders-context";
 import { useNotes } from "@/context/notes-context";
 import { useAdapter } from "@/context/adapter-context";
@@ -15,21 +15,22 @@ const FOLDER_COLORS = [
 
 export function Sidebar() {
     const navigate = useNavigate();
+    const location = useLocation();
     const { folders, selectedFolderId, selectFolder, createFolder, deleteFolder, renameFolder } = useFolders();
-    const { notes } = useNotes();
+    const { notes, trash } = useNotes();
     const adapter = useAdapter();
     const { user } = useAuth();
     const [sharedNotes, setSharedNotes] = useState<SharedNote[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [editValue, setEditValue] = useState("");
+    const [creatingFolder, setCreatingFolder] = useState<{ step: "name" | "color"; name: string } | null>(null);
+    const editRef = useRef<HTMLInputElement>(null);
+    const createRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (!user) return;
         adapter.getSharedWithMe().then(setSharedNotes).catch(() => {});
     }, [user, adapter]);
-    const [editValue, setEditValue] = useState("");
-    const [creatingFolder, setCreatingFolder] = useState<{ step: "name" | "color"; name: string } | null>(null);
-    const editRef = useRef<HTMLInputElement>(null);
-    const createRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (editingId && editRef.current) editRef.current.focus();
@@ -85,7 +86,7 @@ export function Sidebar() {
                 <button
                     onClick={() => { selectFolder(null); navigate("/"); }}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-colors duration-150 ${
-                        selectedFolderId === null
+                        selectedFolderId === null && location.pathname !== "/trash"
                             ? "bg-[var(--color-sidebar-active)] text-[var(--color-ink)] font-medium"
                             : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)]/60"
                     }`}
@@ -245,7 +246,27 @@ export function Sidebar() {
                     <kbd className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--color-border-warm)] font-mono">{/Mac|iPhone|iPad/.test(navigator.userAgent) ? "\u2318K" : "Ctrl+K"}</kbd>
                 </button>
                 <div className="flex items-center justify-between">
-                    <DarkModeToggle />
+                    <div className="flex items-center gap-1">
+                        <DarkModeToggle />
+                        {trash.length > 0 && (
+                            <button
+                                onClick={() => { selectFolder(null); navigate("/trash"); }}
+                                className={`relative p-1.5 rounded-lg transition-colors ${
+                                    location.pathname === "/trash"
+                                        ? "text-[var(--color-ink)] bg-[var(--color-sidebar-active)]"
+                                        : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-sidebar-active)]"
+                                }`}
+                                aria-label={`Trash (${trash.length})`}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                                <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-[var(--color-ink-muted)] text-[var(--color-bg,#fff)] text-[9px] font-medium leading-none">
+                                    {trash.length}
+                                </span>
+                            </button>
+                        )}
+                    </div>
                     <span className="text-[10px] text-[var(--color-ink-muted)]/60 font-serif italic">notty v2</span>
                 </div>
             </div>

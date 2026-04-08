@@ -52,7 +52,6 @@ export class DesktopAdapter implements NottyAdapter {
 
     constructor() {
         this.syncInterval = setInterval(syncMarkdown, 30_000);
-        // Kick off cloud detection in background
         detectCloud();
     }
 
@@ -140,10 +139,31 @@ export class DesktopAdapter implements NottyAdapter {
     }
 
     async deleteNote(id: string): Promise<void> {
-        await invoke("delete_note", { id });
+        await invoke("soft_delete_note", { id });
         syncMarkdown();
         cloudSync((cloud) => {
             fetch(`${cloud}/api/notes/${id}`, { method: "DELETE" }).catch(() => {});
+        });
+    }
+
+    async getTrash(): Promise<Note[]> {
+        return invoke("get_trash_notes");
+    }
+
+    async restoreNote(id: string): Promise<Note | null> {
+        await invoke("restore_note", { id });
+        syncMarkdown();
+        cloudSync((cloud) => {
+            fetch(`${cloud}/api/notes/${id}/restore`, { method: "POST" }).catch(() => {});
+        });
+        return invoke("get_note", { id });
+    }
+
+    async permanentlyDeleteNote(id: string): Promise<void> {
+        await invoke("delete_note", { id });
+        syncMarkdown();
+        cloudSync((cloud) => {
+            fetch(`${cloud}/api/notes/${id}/permanent`, { method: "DELETE" }).catch(() => {});
         });
     }
 

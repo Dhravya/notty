@@ -10,7 +10,6 @@ import {
     EditorBubbleItem,
     type JSONContent,
     type EditorInstance,
-    handleCommandNavigation,
 } from "novel";
 import { useDebouncedCallback } from "use-debounce";
 import {
@@ -300,7 +299,32 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                     className={`px-10 py-14 sm:px-16 sm:py-20 ${showLines ? "editor-ruled-bg" : ""} ${readOnly ? "cursor-default" : ""}`}
                     editorProps={{
                         handleDOMEvents: {
-                            keydown: (_view, event) => readOnly ? false : handleCommandNavigation(event),
+                            keydown: (_view, event) => {
+                                if (readOnly) return false;
+                                const cmd = document.querySelector('#slash-command');
+                                if (!cmd || !['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) return false;
+
+                                event.preventDefault();
+
+                                if (event.key === 'Enter') {
+                                    const selected = cmd.querySelector('[cmdk-item=""][aria-selected="true"]');
+                                    if (selected) (selected as HTMLElement).click();
+                                    return true;
+                                }
+
+                                const items = Array.from(cmd.querySelectorAll('[cmdk-item=""]:not([aria-disabled="true"])'));
+                                const selected = cmd.querySelector('[cmdk-item=""][aria-selected="true"]');
+                                const idx = selected ? items.indexOf(selected) : -1;
+                                const nextIdx = event.key === 'ArrowDown'
+                                    ? Math.min(idx + 1, items.length - 1)
+                                    : Math.max(idx - 1, 0);
+                                const next = items[nextIdx] as HTMLElement | undefined;
+                                if (next) {
+                                    next.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));
+                                    next.scrollIntoView({ block: 'nearest' });
+                                }
+                                return true;
+                            },
                         },
                         attributes: {
                             class: `focus:outline-none max-w-full min-h-[400px] ${readOnly ? "select-text" : ""}`,

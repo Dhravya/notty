@@ -1,13 +1,24 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
-import { LayoutGrid, List, Pencil } from "lucide-react";
+import { LayoutGrid, List, Pencil, Image } from "lucide-react";
 import { AppLayout } from "@/components/app-layout";
 import { NoteCard } from "@/components/note-card";
-import { TimelineView } from "@/components/timeline-view";
+import { MediaCard } from "@/components/media-card";
+import { TimelineView, mergeTimeline } from "@/components/timeline-view";
 import { useNotes } from "@/context/notes-context";
 import { useFolders } from "@/context/folders-context";
+import { useMedia } from "@/context/media-context";
 import { useHotkeys } from "@/lib/hotkeys";
 import { useIsDark } from "@/lib/dark-mode";
+
+function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
+    return new Promise((resolve) => {
+        const img = new window.Image();
+        img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(img.src); };
+        img.onerror = () => { resolve({ width: 0, height: 0 }); URL.revokeObjectURL(img.src); };
+        img.src = URL.createObjectURL(file);
+    });
+}
 
 type SortMode = "recent" | "created";
 type ViewMode = "grid" | "timeline";
@@ -33,9 +44,14 @@ export function HomePage() {
     const navigate = useNavigate();
     const { notes, loading, deleteNote, revalidate } = useNotes();
     const { folders, selectedFolderId, selectFolder, renameFolder, updateFolderDescription } = useFolders();
+    const { media, uploadMedia, deleteMedia, publishMedia, getMediaUrl, revalidate: revalidateMedia } = useMedia();
     const [sortMode, setSortMode] = useState<SortMode>("recent");
     const [viewMode, setViewMode] = usePersistedView();
     const [selectedIndex, setSelectedIndex] = useState(-1);
+    const [uploading, setUploading] = useState(false);
+    const [dragging, setDragging] = useState(false);
+    const dragCountRef = useRef(0);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const isDark = useIsDark();
 
     const [editingName, setEditingName] = useState(false);
@@ -45,7 +61,38 @@ export function HomePage() {
     const nameRef = useRef<HTMLInputElement>(null);
     const descRef = useRef<HTMLTextAreaElement>(null);
 
-    useEffect(() => { revalidate(); }, [revalidate]);
+    useEffect(() => { revalidate(); revalidateMedia(); }, [revalidate, revalidateMedia]);
+
+    const handleUpload = useCallback(async (files: FileList | File[]) => {
+        setUploading(true);
+        try {
+            for (const file of Array.from(files)) {
+                if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) continue;
+                let dims: { width: number; height: number } | undefined;
+                if (file.type.startsWith("image/")) {
+                    dims = await getImageDimensions(file);
+                }
+                await uploadMedia(file, dims);
+            }
+        } finally {
+            setUploading(false);
+        }
+    }, [uploadMedia]);
+
+    // Paste handler
+    useEffect(() => {
+        const onPaste = (e: ClipboardEvent) => {
+            // Don't capture paste if user is typing in an input
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            const files = e.clipboardData?.files;
+            if (files && files.length > 0) {
+                e.preventDefault();
+                handleUpload(files);
+            }
+        };
+        document.addEventListener("paste", onPaste);
+        return () => document.removeEventListener("paste", onPaste);
+    }, [handleUpload]);
 
     const selectedFolder = folders.find((f) => f.id === selectedFolderId);
     const folderNameMap = useMemo(() => new Map(folders.map((f) => [f.id, f.name])), [folders]);
@@ -61,7 +108,8 @@ export function HomePage() {
         }),
     [filtered, sortMode]);
 
-    useEffect(() => { setSelectedIndex((i) => Math.min(i, sorted.length - 1)); }, [sorted.length]);
+    const totalItems = sorted.length + (selectedFolderId ? 0 : media.length);
+    useEffect(() => { setSelectedIndex((i) => Math.min(i, totalItems - 1)); }, [totalItems]);
 
     const createAndNavigate = useCallback(() => {
         const id = crypto.randomUUID();
@@ -75,8 +123,8 @@ export function HomePage() {
 
     useHotkeys([
         { key: "n", handler: createAndNavigate },
-        { key: "j", handler: () => setSelectedIndex((i) => Math.min(i + 1, sorted.length - 1)) },
-        { key: "arrowdown", handler: () => setSelectedIndex((i) => Math.min(i + 1, sorted.length - 1)) },
+        { key: "j", handler: () => setSelectedIndex((i) => Math.min(i + 1, totalItems - 1)) },
+        { key: "arrowdown", handler: () => setSelectedIndex((i) => Math.min(i + 1, totalItems - 1)) },
         { key: "k", handler: () => setSelectedIndex((i) => Math.max(i - 1, 0)) },
         { key: "arrowup", handler: () => setSelectedIndex((i) => Math.max(i - 1, 0)) },
         { key: "enter", handler: () => { if (sorted[selectedIndex]) navigate(`/note/${sorted[selectedIndex].id}`); } },
@@ -112,7 +160,20 @@ export function HomePage() {
 
     return (
         <AppLayout>
-            <div className="min-h-full">
+            <div className="min-h-full relative"
+                onDragEnter={(e) => { e.preventDefault(); dragCountRef.current++; setDragging(true); }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+                onDragLeave={() => { dragCountRef.current--; if (dragCountRef.current <= 0) { setDragging(false); dragCountRef.current = 0; } }}
+                onDrop={(e) => { e.preventDefault(); setDragging(false); dragCountRef.current = 0; if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files); }}
+            >
+                {dragging && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--color-bg)]/80 backdrop-blur-sm border-2 border-dashed border-[var(--color-accent)] rounded-2xl">
+                        <div className="text-center">
+                            <Image size={32} className="mx-auto mb-2 text-[var(--color-accent)]" />
+                            <p className="font-serif text-lg text-[var(--color-accent)]">Drop to upload</p>
+                        </div>
+                    </div>
+                )}
                 <div className="max-w-6xl mx-auto px-8 py-10">
                     {/* Header */}
                     <div className="flex items-end justify-between mb-8">
@@ -156,13 +217,27 @@ export function HomePage() {
                             )}
                             <p className="text-sm text-[var(--color-ink-muted)] mt-1">
                                 {filtered.length} {filtered.length === 1 ? "note" : "notes"}
+                                {media.length > 0 && !selectedFolderId && ` · ${media.length} ${media.length === 1 ? "media" : "media"}`}
                             </p>
                         </div>
-                        <button onClick={createAndNavigate}
-                            className="px-4 py-1.5 text-sm font-medium rounded-lg border border-[var(--color-border-warm)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-sidebar-active)] active:scale-[0.97] transition-all duration-150 flex items-center gap-2">
-                            + New note
-                            <kbd className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--color-border-warm)] font-mono opacity-60">N</kbd>
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                                className="px-3 py-1.5 text-sm font-medium rounded-lg border border-[var(--color-border-warm)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-sidebar-active)] active:scale-[0.97] transition-all duration-150 flex items-center gap-1.5 disabled:opacity-50"
+                                title="Upload image or video (or paste from clipboard)">
+                                {uploading ? (
+                                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <Image size={14} />
+                                )}
+                            </button>
+                            <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple hidden
+                                onChange={(e) => { if (e.target.files?.length) { handleUpload(e.target.files); e.target.value = ""; } }} />
+                            <button onClick={createAndNavigate}
+                                className="px-4 py-1.5 text-sm font-medium rounded-lg border border-[var(--color-border-warm)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-sidebar-active)] active:scale-[0.97] transition-all duration-150 flex items-center gap-2">
+                                + New note
+                                <kbd className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--color-border-warm)] font-mono opacity-60">N</kbd>
+                            </button>
+                        </div>
                     </div>
 
                     {/* Search */}
@@ -203,29 +278,40 @@ export function HomePage() {
                     {/* Content */}
                     {loading ? (
                         <div className="text-center py-20 text-[var(--color-ink-muted)] text-sm">Loading...</div>
-                    ) : sorted.length === 0 ? (
+                    ) : totalItems === 0 ? (
                         <div className="text-center py-24">
                             <p className="font-serif italic text-2xl text-[var(--color-ink-muted)] mb-3">
                                 {selectedFolderId ? "This folder is empty" : "Start writing something beautiful"}
                             </p>
                             <p className="text-sm text-[var(--color-ink-muted)]/70">
-                                {selectedFolderId ? "Move some notes here or create a new one." : "Click \"New note +\" to begin."}
+                                {selectedFolderId ? "Move some notes here or create a new one." : "Write a note, paste an image, or drag a file here."}
                             </p>
                         </div>
                     ) : viewMode === "grid" ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                            {sorted.map((note, i) => (
-                                <div key={note.id} data-note-index={i}
-                                    className={`rounded-2xl transition-all duration-150 ${
-                                        selectedIndex === i ? "ring-[3px] ring-[var(--color-accent)] scale-[1.03] shadow-[0_0_0_1px_var(--color-accent),0_4px_20px_rgba(42,161,152,0.25)]" : ""
-                                    }`} onClick={() => setSelectedIndex(i)}>
-                                    <NoteCard note={note} onDelete={deleteNote} isDark={isDark}
-                                        folderName={folderNameMap.get(note.folder_id ?? "")} />
-                                </div>
-                            ))}
+                            {(() => {
+                                const timelineItems = mergeTimeline(sorted, selectedFolderId ? [] : media, getMediaUrl);
+                                return timelineItems.map((item, i) => (
+                                    <div key={item.kind === "note" ? `n-${item.data.id}` : `m-${item.data.id}`} data-note-index={i}
+                                        className={`rounded-2xl transition-all duration-150 ${
+                                            selectedIndex === i ? "ring-[3px] ring-[var(--color-accent)] scale-[1.03] shadow-[0_0_0_1px_var(--color-accent),0_4px_20px_rgba(42,161,152,0.25)]" : ""
+                                        }`} onClick={() => setSelectedIndex(i)}>
+                                        {item.kind === "note" ? (
+                                            <NoteCard note={item.data} onDelete={deleteNote} isDark={isDark}
+                                                folderName={folderNameMap.get(item.data.folder_id ?? "")} />
+                                        ) : (
+                                            <MediaCard item={item.data} mediaUrl={item.url}
+                                                onDelete={deleteMedia} onTogglePublish={publishMedia} isDark={isDark} />
+                                        )}
+                                    </div>
+                                ));
+                            })()}
                         </div>
                     ) : (
-                        <TimelineView notes={sorted} folders={folders} onDelete={deleteNote}
+                        <TimelineView
+                            items={mergeTimeline(sorted, selectedFolderId ? [] : media, getMediaUrl)}
+                            folders={folders} onDeleteNote={deleteNote}
+                            onDeleteMedia={deleteMedia} onTogglePublishMedia={publishMedia}
                             selectedIndex={selectedIndex} onSelect={setSelectedIndex} isDark={isDark} />
                     )}
                 </div>

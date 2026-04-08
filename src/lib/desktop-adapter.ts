@@ -1,4 +1,4 @@
-import type { NottyAdapter, Note, User, Folder, Share, SharedNote, Profile } from "./adapter";
+import type { NottyAdapter, Note, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
 import type * as Y from "yjs";
 import { NottyProvider } from "./yjs-provider";
 import { authClient } from "./auth-client";
@@ -225,6 +225,13 @@ export class DesktopAdapter implements NottyAdapter {
     async lockNote(): Promise<void> { throw new Error("Locking requires cloud"); }
     async unlockNote(): Promise<void> { throw new Error("Locking requires cloud"); }
     async verifyLock(): Promise<{ lockToken: string }> { throw new Error("Locking requires cloud"); }
+
+    // Media — not available on desktop
+    async getMedia(): Promise<MediaItem[]> { return []; }
+    async uploadMedia(): Promise<MediaItem> { throw new Error("Media upload requires cloud"); }
+    async deleteMedia(): Promise<void> { throw new Error("Media requires cloud"); }
+    async publishMedia(): Promise<void> { throw new Error("Media requires cloud"); }
+    getMediaUrl(): string { return ""; }
 
     // Publishing — not available on desktop
     async publishNote(): Promise<void> { throw new Error("Publishing requires cloud"); }

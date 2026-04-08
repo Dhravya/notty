@@ -216,6 +216,7 @@ function MediaContent({ item, url }: { item: MediaItem; url: string }) {
                 src={url}
                 alt={item.caption || item.filename}
                 className="max-w-full max-h-full object-contain"
+                style={{ viewTransitionName: "media-hero" }}
                 draggable={false}
             />
         );
@@ -230,6 +231,7 @@ function MediaContent({ item, url }: { item: MediaItem; url: string }) {
                 autoPlay
                 playsInline
                 className="max-w-full max-h-full object-contain"
+                style={{ viewTransitionName: "media-hero" }}
             />
         );
     }

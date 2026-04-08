@@ -219,6 +219,13 @@ body::before {
 }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
+/* View transitions */
+::view-transition-old(media-hero),
+::view-transition-new(media-hero) {
+    animation-duration: 0.25s;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Offline banner entrance */
 @keyframes in-up {
     from { opacity: 0; transform: translateX(-50%) translateY(12px); }

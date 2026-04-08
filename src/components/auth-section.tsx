@@ -57,7 +57,15 @@ export function AuthSection() {
     const { user, signOut } = useAuth();
     const [passkeyError, setPasskeyError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
+    const [hasPasskey, setHasPasskey] = useState(false);
     const isAnonymous = user?.isAnonymous || !user?.email;
+
+    useEffect(() => {
+        if (isAnonymous) return;
+        authClient.passkey.listUserPasskeys().then(({ data }) => {
+            if (data && data.length > 0) setHasPasskey(true);
+        });
+    }, [isAnonymous]);
 
     useDeepLinkAuth();
 
@@ -80,15 +88,18 @@ export function AuthSection() {
                         Sign out
                     </button>
                 </div>
-                <button
-                    onClick={async () => {
-                        await authClient.passkey.addPasskey({ name: "My Device" });
-                    }}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] transition-colors"
-                >
-                    <PasskeyIcon size={12} />
-                    Add a passkey
-                </button>
+                {!hasPasskey && (
+                    <button
+                        onClick={async () => {
+                            await authClient.passkey.addPasskey({ name: "My Device" });
+                            setHasPasskey(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] transition-colors"
+                    >
+                        <PasskeyIcon size={12} />
+                        Add a passkey
+                    </button>
+                )}
             </div>
         );
     }

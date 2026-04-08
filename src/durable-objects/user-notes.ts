@@ -8,6 +8,39 @@ import { createPatch, applyPatch } from "../lib/diff";
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 
+// Convert Yjs XML nodes to TipTap JSON format
+function yNodeToTiptap(ynode: Y.XmlElement | Y.XmlText | Y.AbstractType<any>): any {
+    if (ynode instanceof Y.XmlText) {
+        return ynode.toDelta().map((op: any) => {
+            if (typeof op.insert !== "string") return null;
+            const node: any = { type: "text", text: op.insert };
+            if (op.attributes && Object.keys(op.attributes).length > 0) {
+                node.marks = Object.entries(op.attributes).map(([type, attrs]) => {
+                    const mark: any = { type };
+                    if (attrs && typeof attrs === "object" && Object.keys(attrs as object).length > 0) mark.attrs = attrs;
+                    return mark;
+                });
+            }
+            return node;
+        }).filter(Boolean);
+    }
+
+    if (ynode instanceof Y.XmlElement) {
+        const attrs = ynode.getAttributes();
+        const children = Array.from(ynode).flatMap(child => {
+            const result = yNodeToTiptap(child);
+            return Array.isArray(result) ? result : [result];
+        }).filter(Boolean);
+
+        const node: any = { type: ynode.nodeName };
+        if (Object.keys(attrs).length > 0) node.attrs = attrs;
+        if (children.length > 0) node.content = children;
+        return node;
+    }
+
+    return null;
+}
+
 export class UserNotesDurableObject extends DurableObject {
     private sql: SqlStorage;
     private docs = new Map<string, Y.Doc>();
@@ -405,6 +438,11 @@ export class UserNotesDurableObject extends DurableObject {
             if (published) {
                 const note = this.getNote(id);
                 if (note?.locked) return new Response("Cannot publish a locked note", { status: 400 });
+                // Sync Yjs content to the content column so public pages have fresh data
+                const content = this.extractContentJson(id);
+                if (content) {
+                    this.sql.exec("UPDATE notes SET content = ? WHERE id = ?", content, id);
+                }
             }
             this.sql.exec(
                 `UPDATE notes SET published = ?, published_at = CASE WHEN ? THEN unixepoch() ELSE published_at END, updated_at = unixepoch() WHERE id = ?`,
@@ -623,7 +661,7 @@ export class UserNotesDurableObject extends DurableObject {
             const rows = this.sql.exec(
                 `SELECT n.id, n.title, n.content, n.published_at, n.created_at, f.name as folder_name
                  FROM notes n LEFT JOIN folders f ON n.folder_id = f.id
-                 WHERE n.published = 1 ORDER BY n.published_at DESC`
+                 WHERE n.published = 1 AND n.deleted_at IS NULL ORDER BY n.published_at DESC`
             ).toArray();
             return Response.json(rows);
         }
@@ -779,6 +817,19 @@ export class UserNotesDurableObject extends DurableObject {
             .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, current_branch_id, created_at, updated_at FROM notes WHERE id = ?", id)
             .toArray();
         return rows[0] || null;
+    }
+
+    // Extract TipTap JSON from Yjs state so public pages can render it
+    private extractContentJson(noteId: string): string | null {
+        try {
+            const doc = this.getYDoc(noteId);
+            const fragment = doc.getXmlFragment("default");
+            if (fragment.length === 0) return null;
+            const json = { type: "doc", content: Array.from(fragment).map(yNodeToTiptap).flat().filter(Boolean) };
+            return JSON.stringify(json);
+        } catch {
+            return null;
+        }
     }
 
     private broadcastJson(message: object, exclude?: WebSocket) {

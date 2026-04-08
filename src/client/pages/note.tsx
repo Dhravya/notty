@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import { ArrowLeft, LayoutGrid, Share2, Lock, Unlock, History, GitBranch } from "lucide-react";
 import { Editor } from "@/components/editor";
 import { CommandPalette } from "@/components/command-palette";
@@ -79,7 +79,7 @@ export function NotePage() {
     }, [id, adapter, shareToken, authLoading, user]);
 
     useHotkeys([
-        { key: "escape", handler: () => navigate("/") },
+        { key: "escape", handler: () => navigate("/", { viewTransition: true }) },
     ]);
 
     // Fade out controls after 3s of no mouse movement
@@ -149,13 +149,14 @@ export function NotePage() {
         return (
             <div className="min-h-screen bg-[var(--color-paper)]">
                 <div className="fixed top-0 left-0 right-0 z-40 flex items-center px-5 py-3">
-                    <button
-                        onClick={() => navigate("/")}
+                    <Link
+                        to="/"
+                        viewTransition
                         className="flex items-center gap-2 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--color-sidebar-active)]"
                     >
                         <ArrowLeft size={16} />
                         <span className="font-serif italic">notty</span>
-                    </button>
+                    </Link>
                 </div>
                 <LockVerify
                     noteId={id}
@@ -179,16 +180,17 @@ export function NotePage() {
     }
 
     return (
-        <div className="min-h-screen bg-[var(--color-paper)]">
+        <div className="min-h-screen bg-[var(--color-paper)]" style={{ viewTransitionName: `note-${id}` }}>
             {/* Floating top bar */}
             <div className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-5 py-3 transition-opacity duration-500 ${showControls ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-                <button
-                    onClick={() => navigate("/")}
+                <Link
+                    to="/"
+                    viewTransition
                     className="flex items-center gap-2 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--color-sidebar-active)]"
                 >
                     <ArrowLeft size={16} />
                     <span className="font-serif italic">notty</span>
-                </button>
+                </Link>
 
                 <div className="flex items-center gap-2 text-[var(--color-ink-muted)]">
                     {date && date.full && (
@@ -257,13 +259,14 @@ export function NotePage() {
                         </button>
                     )}
 
-                    <button
-                        onClick={() => navigate("/")}
+                    <Link
+                        to="/"
+                        viewTransition
                         className="p-1.5 rounded-lg hover:text-[var(--color-ink)] hover:bg-[var(--color-sidebar-active)] transition-colors"
                         title="Back to notes"
                     >
                         <LayoutGrid size={15} />
-                    </button>
+                    </Link>
                 </div>
             </div>
 

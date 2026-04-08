@@ -9,6 +9,7 @@ type MediaContextType = {
     uploadMedia: (file: File, dimensions?: { width: number; height: number }) => Promise<MediaItem>;
     deleteMedia: (id: string) => Promise<void>;
     publishMedia: (id: string, published: boolean) => Promise<void>;
+    updateCaption: (id: string, caption: string) => Promise<void>;
     getMediaUrl: (id: string) => string;
     revalidate: () => Promise<void>;
 };
@@ -53,10 +54,15 @@ export function MediaProvider({ children }: { children: ReactNode }) {
         await adapter.publishMedia(id, published);
     }, [adapter]);
 
+    const updateCaption = useCallback(async (id: string, caption: string) => {
+        setMedia((prev) => prev.map((m) => m.id === id ? { ...m, caption } : m));
+        await adapter.updateMediaCaption(id, caption);
+    }, [adapter]);
+
     const getMediaUrl = useCallback((id: string) => adapter.getMediaUrl(id), [adapter]);
 
     return (
-        <MediaContext.Provider value={{ media, loading, uploadMedia, deleteMedia, publishMedia, getMediaUrl, revalidate: fetchMedia }}>
+        <MediaContext.Provider value={{ media, loading, uploadMedia, deleteMedia, publishMedia, updateCaption, getMediaUrl, revalidate: fetchMedia }}>
             {children}
         </MediaContext.Provider>
     );

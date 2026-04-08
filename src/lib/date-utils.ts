@@ -10,6 +10,32 @@ export function formatEntryDate(ts: number): { month: string; day: string; year:
     };
 }
 
+// Cluster items uploaded close together into "moments" (default 30 min gap)
+export function clusterByMoment<T extends { created_at: number }>(items: T[], gapSeconds = 30 * 60): T[][] {
+    if (items.length === 0) return [];
+    const sorted = [...items].sort((a, b) => a.created_at - b.created_at);
+    const clusters: T[][] = [[sorted[0]]];
+    for (let i = 1; i < sorted.length; i++) {
+        const gap = sorted[i].created_at - sorted[i - 1].created_at;
+        if (gap <= gapSeconds) {
+            clusters[clusters.length - 1].push(sorted[i]);
+        } else {
+            clusters.push([sorted[i]]);
+        }
+    }
+    return clusters;
+}
+
+export function formatTimeRange(startTs: number, endTs: number): string {
+    const fmt = (ts: number) => {
+        const d = new Date(ts > 1e12 ? ts : ts * 1000);
+        return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    };
+    const start = fmt(startTs);
+    const end = fmt(endTs);
+    return start === end ? start : `${start} – ${end}`;
+}
+
 export function groupByDate<T extends { created_at: number }>(notes: T[]): Map<string, T[]> {
     const groups = new Map<string, T[]>();
     for (const note of notes) {

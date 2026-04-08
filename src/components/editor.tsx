@@ -62,6 +62,14 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
     const lastSavedRef = useRef<string>("");
     const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
     const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const [wordCount, setWordCount] = useState(0);
+    const [charCount, setCharCount] = useState(0);
+
+    const updateCounts = (editor: EditorInstance) => {
+        const text = editor.getText();
+        setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
+        setCharCount(text.length);
+    };
 
     const [showLines, setShowLines] = useState<boolean>(() => {
         try { return localStorage.getItem("notty-show-lines") !== "false"; }
@@ -293,16 +301,16 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
                     }}
                     onUpdate={({ editor }) => {
                         if (!readOnly) debouncedSave(editor);
+                        updateCounts(editor);
                     }}
                     onCreate={({ editor }) => {
                         editorRef.current = editor;
-                        // Bootstrap from HTTP only if the Yjs doc is still empty.
-                        // setContent is safe here because Collaboration has nothing to render yet.
                         if (bootstrapRef.current && !editor.getText().trim()) {
                             editor.commands.setContent(bootstrapRef.current);
                             bootstrapRef.current = null;
                         }
                         if (!readOnly) editor.commands.focus("end");
+                        updateCounts(editor);
                     }}
                 >
                     {/* Hide formatting tools for read-only */}
@@ -352,10 +360,19 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
                 </EditorContent>
             </EditorRoot>
 
-            {/* Save status — bottom right, subtle */}
+            {/* Status bar — bottom */}
             {!readOnly && !shareToken && (
-                <div className="absolute bottom-4 right-6 z-10">
-                    <SaveIndicator saveState={saveState} />
+                <div className="absolute bottom-4 left-6 right-6 z-10 flex items-center justify-between pointer-events-none">
+                    <span
+                        className="group pointer-events-auto text-[10px] tracking-wide text-[var(--color-ink-muted)]/40 hover:text-[var(--color-ink-muted)] transition-colors cursor-default select-none"
+                        title={`${wordCount.toLocaleString()} words · ${charCount.toLocaleString()} characters · ${Math.max(1, Math.ceil(wordCount / 250))} pages`}
+                    >
+                        <span className="group-hover:hidden">{wordCount.toLocaleString()} words</span>
+                        <span className="hidden group-hover:inline">{wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars · {Math.max(1, Math.ceil(wordCount / 250))}p</span>
+                    </span>
+                    <span className="pointer-events-auto">
+                        <SaveIndicator saveState={saveState} />
+                    </span>
                 </div>
             )}
         </div>

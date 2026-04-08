@@ -20,16 +20,12 @@ export function MediaViewer({
     const captionRef = useRef<HTMLTextAreaElement>(null);
 
     const item = items[index];
+    const cancelledRef = useRef(false);
 
     // Close if index is out of bounds (e.g. item deleted while viewing)
     useEffect(() => {
         if (!items[index]) onClose();
     }, [index, items, onClose]);
-
-    if (!item) return null;
-
-    const url = getMediaUrl(item.id);
-    const isPublished = !!item.published;
 
     // Lock body scroll
     useEffect(() => {
@@ -49,6 +45,11 @@ export function MediaViewer({
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
     }, [index, items.length, editingCaption, onClose]);
+
+    if (!item) return null;
+
+    const url = getMediaUrl(item.id);
+    const isPublished = !!item.published;
 
     const goTo = (i: number) => {
         if (i >= 0 && i < items.length) setIndex(i);
@@ -100,6 +101,7 @@ export function MediaViewer({
     };
 
     const saveCaption = () => {
+        if (cancelledRef.current) { cancelledRef.current = false; return; }
         onUpdateCaption(item.id, captionValue);
         setEditingCaption(false);
     };
@@ -172,7 +174,7 @@ export function MediaViewer({
                             onBlur={saveCaption}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveCaption(); }
-                                if (e.key === "Escape") setEditingCaption(false);
+                                if (e.key === "Escape") { cancelledRef.current = true; setEditingCaption(false); }
                             }}
                             rows={2}
                             placeholder="Add a caption..."

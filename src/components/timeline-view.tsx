@@ -62,13 +62,11 @@ export function TimelineView({
                         </div>
                         <div className="flex-1 space-y-3 py-4 border-l-2 border-[var(--color-border-warm)] pl-4 sm:pl-6">
                             {groupItems.map((item) => {
-                                const idx = flatIdx++;
-                                const isSelected = idx === selectedIndex;
-
                                 if (item.kind === "note") {
+                                    const idx = flatIdx++;
                                     return <NoteTimelineEntry
                                         key={`n-${item.data.id}`} note={item.data} folder={folderMap.get(item.data.folder_id ?? "")}
-                                        isSelected={isSelected} flatIdx={idx} onSelect={onSelect} onDelete={onDeleteNote} isDark={isDark}
+                                        isSelected={idx === selectedIndex} flatIdx={idx} onSelect={onSelect} onDelete={onDeleteNote} isDark={isDark}
                                     />;
                                 }
 
@@ -78,6 +76,7 @@ export function TimelineView({
                                     const momentKey = cluster.map(m => m.id).join(",");
                                     if (renderedMoments.has(momentKey)) return null;
                                     renderedMoments.add(momentKey);
+                                    const idx = flatIdx++;
 
                                     return <MomentCluster
                                         key={`moment-${cluster[0].id}`}
@@ -93,9 +92,10 @@ export function TimelineView({
                                     />;
                                 }
 
+                                const idx = flatIdx++;
                                 return <MediaTimelineEntry
                                     key={`m-${item.data.id}`} item={item.data} url={item.url}
-                                    isSelected={isSelected} flatIdx={idx} onSelect={onSelect}
+                                    isSelected={idx === selectedIndex} flatIdx={idx} onSelect={onSelect}
                                     onDelete={onDeleteMedia} onTogglePublish={onTogglePublishMedia}
                                     onOpen={() => onOpenMedia?.(item.data.id)}
                                     isDark={isDark}

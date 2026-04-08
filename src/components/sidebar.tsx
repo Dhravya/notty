@@ -94,24 +94,6 @@ export function Sidebar() {
                     <span>All Notes</span>
                     <span className="text-[11px] tabular-nums text-[var(--color-ink-muted)]">{notes.length}</span>
                 </button>
-                <button
-                    onClick={() => { selectFolder(null); navigate("/trash"); }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] transition-colors duration-150 ${
-                        location.pathname === "/trash"
-                            ? "bg-[var(--color-sidebar-active)] text-[var(--color-ink)] font-medium"
-                            : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)]/60"
-                    }`}
-                >
-                    <span className="flex items-center gap-2">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                        Trash
-                    </span>
-                    {trash.length > 0 && (
-                        <span className="text-[11px] tabular-nums text-[var(--color-ink-muted)]">{trash.length}</span>
-                    )}
-                </button>
             </nav>
 
             {/* Folders */}
@@ -253,6 +235,22 @@ export function Sidebar() {
                 </div>
             )}
             <div className="px-4 py-3 border-t border-[var(--color-border-warm)]/50 space-y-2">
+                {trash.length > 0 && (
+                    <button
+                        onClick={() => { selectFolder(null); navigate("/trash"); }}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
+                            location.pathname === "/trash"
+                                ? "text-[var(--color-ink)] bg-[var(--color-sidebar-active)]"
+                                : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] hover:text-[var(--color-ink)]"
+                        }`}
+                    >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                        <span className="flex-1 text-left">Trash</span>
+                        <span className="text-[10px] tabular-nums opacity-60">{trash.length}</span>
+                    </button>
+                )}
                 <button
                     onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
                     className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] hover:text-[var(--color-ink)] transition-colors"

@@ -71,8 +71,7 @@ export class WebAdapter implements NottyAdapter {
             const session = await authClient.getSession();
             return (session.data?.user as User) ?? null;
         } catch {
-            // Offline — return cached local user so the app still renders
-            return { id: "offline", name: "Offline" };
+            return null;
         }
     }
 

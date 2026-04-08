@@ -57,7 +57,7 @@ export class DesktopAdapter implements NottyAdapter {
     }
 
     async getSession(): Promise<User | null> {
-        const cloud = cloudUrlCache;
+        const cloud = await (cloudCheckPromise ?? detectCloud());
         if (cloud) {
             try {
                 const session = await authClient.getSession();

@@ -81,7 +81,7 @@ export type Folder = {
 
 export type MediaItem = {
     id: string;
-    type: "image" | "video";
+    type: "image" | "video" | "pdf";
     filename: string;
     r2_key: string;
     mime_type: string;
@@ -89,6 +89,7 @@ export type MediaItem = {
     width?: number | null;
     height?: number | null;
     published?: boolean | number;
+    caption?: string | null;
     created_at: number;
     updated_at: number;
 };
@@ -148,6 +149,7 @@ export interface NottyAdapter {
     uploadMedia(file: File, dimensions?: { width: number; height: number }): Promise<MediaItem>;
     deleteMedia(id: string): Promise<void>;
     publishMedia(id: string, published: boolean): Promise<void>;
+    updateMediaCaption(id: string, caption: string): Promise<void>;
     getMediaUrl(id: string): string;
 
     // Publishing

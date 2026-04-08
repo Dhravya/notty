@@ -344,6 +344,15 @@ export class WebAdapter implements NottyAdapter {
         await assertOk(res, "Failed to publish media");
     }
 
+    async updateMediaCaption(id: string, caption: string): Promise<void> {
+        const res = await fetch(`/api/media/${id}/caption`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ caption }),
+        });
+        await assertOk(res, "Failed to update caption");
+    }
+
     getMediaUrl(id: string): string {
         return `/api/media/${id}/file`;
     }

@@ -1,7 +1,8 @@
 import { Link } from "react-router";
+import { FileText } from "lucide-react";
 import type { Note, Folder, MediaItem } from "@/lib/adapter";
 import { getNoteColor, extractPreview } from "./note-card";
-import { formatEntryDate, groupByDate } from "@/lib/date-utils";
+import { formatEntryDate, groupByDate, clusterByMoment, formatTimeRange } from "@/lib/date-utils";
 
 export type TimelineItem =
     | { kind: "note"; data: Note }
@@ -17,13 +18,14 @@ export function mergeTimeline(notes: Note[], media: MediaItem[], getMediaUrl: (i
 }
 
 export function TimelineView({
-    items, folders, onDeleteNote, onDeleteMedia, onTogglePublishMedia, selectedIndex = -1, onSelect, isDark,
+    items, folders, onDeleteNote, onDeleteMedia, onTogglePublishMedia, onOpenMedia, selectedIndex = -1, onSelect, isDark,
 }: {
     items: TimelineItem[];
     folders: Folder[];
     onDeleteNote: (id: string) => void;
     onDeleteMedia: (id: string) => void;
     onTogglePublishMedia: (id: string, published: boolean) => void;
+    onOpenMedia?: (mediaId: string) => void;
     selectedIndex?: number;
     onSelect?: (index: number) => void;
     isDark?: boolean;
@@ -40,13 +42,25 @@ export function TimelineView({
         <div className="space-y-0">
             {[...dateGroups.entries()].map(([dateKey, groupItems]) => {
                 const { month, day } = formatEntryDate(groupItems[0].created_at);
+
+                // Cluster media items within this date group into moments
+                const mediaOnly = groupItems.filter((i) => i.kind === "media") as (typeof groupItems[number] & { kind: "media"; data: MediaItem })[];
+                const moments = clusterByMoment(mediaOnly.map(m => m.data), 30 * 60);
+                const momentMap = new Map<string, MediaItem[]>();
+                for (const cluster of moments) {
+                    if (cluster.length >= 2) {
+                        for (const m of cluster) momentMap.set(m.id, cluster);
+                    }
+                }
+                const renderedMoments = new Set<string>();
+
                 return (
-                    <div key={dateKey} className="flex gap-6">
-                        <div className="w-16 shrink-0 text-right sticky top-0 self-start pt-6 z-10">
-                            <div className="text-[11px] uppercase tracking-widest text-[var(--color-ink-muted)]">{month}</div>
-                            <div className="font-serif text-2xl text-[var(--color-accent)]">{day}</div>
+                    <div key={dateKey} className="flex gap-4 sm:gap-6">
+                        <div className="w-12 sm:w-16 shrink-0 text-right sticky top-0 self-start pt-6 z-10">
+                            <div className="text-[10px] sm:text-[11px] uppercase tracking-widest text-[var(--color-ink-muted)]">{month}</div>
+                            <div className="font-serif text-xl sm:text-2xl text-[var(--color-accent)]">{day}</div>
                         </div>
-                        <div className="flex-1 space-y-3 py-4 border-l-2 border-[var(--color-border-warm)] pl-6">
+                        <div className="flex-1 space-y-3 py-4 border-l-2 border-[var(--color-border-warm)] pl-4 sm:pl-6">
                             {groupItems.map((item) => {
                                 const idx = flatIdx++;
                                 const isSelected = idx === selectedIndex;
@@ -58,16 +72,98 @@ export function TimelineView({
                                     />;
                                 }
 
+                                // Check if this media item is part of a moment cluster
+                                const cluster = momentMap.get(item.data.id);
+                                if (cluster && cluster.length >= 2) {
+                                    const momentKey = cluster.map(m => m.id).join(",");
+                                    if (renderedMoments.has(momentKey)) return null;
+                                    renderedMoments.add(momentKey);
+
+                                    return <MomentCluster
+                                        key={`moment-${cluster[0].id}`}
+                                        items={cluster}
+                                        getUrl={(id) => {
+                                            const mi = items.find(i => i.kind === "media" && i.data.id === id);
+                                            return mi?.kind === "media" ? mi.url : "";
+                                        }}
+                                        onOpen={(id) => onOpenMedia?.(id)}
+                                        onDelete={onDeleteMedia}
+                                        onTogglePublish={onTogglePublishMedia}
+                                        isDark={isDark}
+                                    />;
+                                }
+
                                 return <MediaTimelineEntry
                                     key={`m-${item.data.id}`} item={item.data} url={item.url}
                                     isSelected={isSelected} flatIdx={idx} onSelect={onSelect}
-                                    onDelete={onDeleteMedia} onTogglePublish={onTogglePublishMedia} isDark={isDark}
+                                    onDelete={onDeleteMedia} onTogglePublish={onTogglePublishMedia}
+                                    onOpen={() => onOpenMedia?.(item.data.id)}
+                                    isDark={isDark}
                                 />;
                             })}
                         </div>
                     </div>
                 );
             })}
+        </div>
+    );
+}
+
+function MomentCluster({ items, getUrl, onOpen, onDelete, onTogglePublish, isDark }: {
+    items: MediaItem[];
+    getUrl: (id: string) => string;
+    onOpen: (id: string) => void;
+    onDelete: (id: string) => void;
+    onTogglePublish: (id: string, published: boolean) => void;
+    isDark?: boolean;
+}) {
+    const timeRange = formatTimeRange(
+        items[0].created_at,
+        items[items.length - 1].created_at
+    );
+
+    return (
+        <div className="rounded-2xl border border-[var(--color-border-warm)] overflow-hidden bg-[var(--color-card)]/50">
+            <div className="px-4 sm:px-5 pt-3 pb-2 flex items-center gap-2">
+                <span className="text-xs text-[var(--color-ink-muted)]">{timeRange}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-sidebar-active)] text-[var(--color-ink-muted)]">
+                    {items.length} items
+                </span>
+            </div>
+            <div className="flex gap-1.5 px-4 sm:px-5 pb-4 overflow-x-auto scrollbar-hide">
+                {items.map((item) => {
+                    const url = getUrl(item.id);
+                    return (
+                        <button
+                            key={item.id}
+                            onClick={() => onOpen(item.id)}
+                            className="shrink-0 w-24 h-24 sm:w-32 sm:h-32 rounded-xl overflow-hidden relative group/thumb"
+                        >
+                            {item.type === "image" ? (
+                                <img src={url} alt={item.caption || item.filename} className="w-full h-full object-cover" loading="lazy" />
+                            ) : item.type === "video" ? (
+                                <div className="w-full h-full bg-black/10 flex items-center justify-center">
+                                    <video src={url} className="w-full h-full object-cover" muted preload="metadata" />
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <div className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="w-full h-full bg-[var(--color-sidebar)] flex items-center justify-center">
+                                    <FileText size={24} className="text-[var(--color-ink-muted)]" />
+                                </div>
+                            )}
+                            {item.caption && (
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1">
+                                    <p className="text-[10px] text-white truncate">{item.caption}</p>
+                                </div>
+                            )}
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -83,7 +179,7 @@ function NoteTimelineEntry({ note, folder, isSelected, flatIdx, onSelect, onDele
     return (
         <Link to={`/note/${note.id}`} className="block group" data-note-index={flatIdx} onClick={() => onSelect?.(flatIdx)}>
             <div
-                className={`rounded-l-md rounded-r-2xl p-5 transition-all duration-150 hover:bg-[var(--color-sidebar-active)] ${
+                className={`rounded-l-md rounded-r-2xl p-4 sm:p-5 transition-all duration-150 hover:bg-[var(--color-sidebar-active)] ${
                     isSelected ? "ring-[3px] ring-[var(--color-accent)] bg-[var(--color-sidebar-active)] shadow-[0_0_0_1px_var(--color-accent),0_4px_20px_rgba(42,161,152,0.25)]" : ""
                 }`}
                 style={{ backgroundColor: isSelected ? undefined : `${color.bg}40` }}
@@ -105,7 +201,7 @@ function NoteTimelineEntry({ note, folder, isSelected, flatIdx, onSelect, onDele
                     )}
                     <button
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(note.id); }}
-                        className="ml-auto p-1 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity"
+                        className="ml-auto p-2 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity min-w-[44px] min-h-[44px] flex items-center justify-center -m-1"
                         style={{ color: color.text }} aria-label="Delete note"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -120,14 +216,16 @@ function NoteTimelineEntry({ note, folder, isSelected, flatIdx, onSelect, onDele
     );
 }
 
-function MediaTimelineEntry({ item, url, isSelected, flatIdx, onSelect, onDelete, onTogglePublish, isDark }: {
+function MediaTimelineEntry({ item, url, isSelected, flatIdx, onSelect, onDelete, onTogglePublish, onOpen, isDark }: {
     item: MediaItem; url: string; isSelected: boolean; flatIdx: number;
     onSelect?: (i: number) => void; onDelete: (id: string) => void;
-    onTogglePublish: (id: string, published: boolean) => void; isDark?: boolean;
+    onTogglePublish: (id: string, published: boolean) => void;
+    onOpen?: () => void; isDark?: boolean;
 }) {
     const color = getNoteColor(item.id, isDark);
     const { time } = formatEntryDate(item.created_at);
     const isPublished = !!item.published;
+    const typeLabel = item.type === "image" ? "Image" : item.type === "video" ? "Video" : "PDF";
 
     return (
         <div className="block group" data-note-index={flatIdx} onClick={() => onSelect?.(flatIdx)}>
@@ -137,10 +235,10 @@ function MediaTimelineEntry({ item, url, isSelected, flatIdx, onSelect, onDelete
                 }`}
                 style={{ backgroundColor: isSelected ? undefined : `${color.bg}40` }}
             >
-                <div className="flex items-center gap-2 px-5 pt-4 pb-2">
+                <div className="flex items-center gap-2 px-4 sm:px-5 pt-4 pb-2">
                     <span className="text-xs text-[var(--color-ink-muted)]">{time}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-sidebar-active)] text-[var(--color-ink-muted)]">
-                        {item.type === "image" ? "Image" : "Video"}
+                        {typeLabel}
                     </span>
                     {isPublished && (
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded flex items-center gap-1" style={{ backgroundColor: "#10B98118", color: "#047857" }}>
@@ -150,7 +248,7 @@ function MediaTimelineEntry({ item, url, isSelected, flatIdx, onSelect, onDelete
                     <div className="ml-auto flex items-center gap-1">
                         <button
                             onClick={(e) => { e.stopPropagation(); onTogglePublish(item.id, !isPublished); }}
-                            className={`p-1 rounded-lg transition-opacity ${isPublished ? "opacity-80" : "opacity-0 group-hover:opacity-50 hover:!opacity-100"}`}
+                            className={`p-2 rounded-lg transition-opacity min-w-[44px] min-h-[44px] flex items-center justify-center -m-1 ${isPublished ? "opacity-80" : "opacity-0 group-hover:opacity-50 hover:!opacity-100"}`}
                             style={{ color: isPublished ? "#047857" : color.text }}
                             title={isPublished ? "Make private" : "Make public"}
                         >
@@ -160,7 +258,7 @@ function MediaTimelineEntry({ item, url, isSelected, flatIdx, onSelect, onDelete
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-                            className="p-1 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity"
+                            className="p-2 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity min-w-[44px] min-h-[44px] flex items-center justify-center -m-1"
                             style={{ color: color.text }} aria-label="Delete"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -170,17 +268,29 @@ function MediaTimelineEntry({ item, url, isSelected, flatIdx, onSelect, onDelete
                     </div>
                 </div>
 
-                {item.type === "image" ? (
-                    <div className="px-5 pb-4">
-                        <img src={url} alt={item.filename} className="w-full max-h-64 object-cover rounded-lg" loading="lazy" />
-                    </div>
-                ) : (
-                    <div className="px-5 pb-4">
-                        <video src={url} className="w-full max-h-64 object-cover rounded-lg" controls preload="metadata" />
-                    </div>
-                )}
+                <button onClick={onOpen} className="w-full text-left cursor-pointer">
+                    {item.type === "image" ? (
+                        <div className="px-4 sm:px-5 pb-2">
+                            <img src={url} alt={item.caption || item.filename} className="w-full max-h-64 object-cover rounded-lg" loading="lazy" />
+                        </div>
+                    ) : item.type === "video" ? (
+                        <div className="px-4 sm:px-5 pb-2">
+                            <video src={url} className="w-full max-h-64 object-cover rounded-lg" controls preload="metadata" playsInline />
+                        </div>
+                    ) : (
+                        <div className="px-4 sm:px-5 pb-2">
+                            <div className="w-full h-32 rounded-lg bg-[var(--color-sidebar)] flex items-center justify-center gap-3">
+                                <FileText size={28} className="text-[var(--color-ink-muted)]" />
+                                <span className="text-sm text-[var(--color-ink-muted)]">PDF Document</span>
+                            </div>
+                        </div>
+                    )}
+                </button>
 
-                <div className="px-5 pb-3">
+                <div className="px-4 sm:px-5 pb-3">
+                    {item.caption ? (
+                        <p className="text-[12px] text-[var(--color-ink)] mb-1">{item.caption}</p>
+                    ) : null}
                     <span className="text-[11px] text-[var(--color-ink-muted)] opacity-50">{item.filename}</span>
                 </div>
             </div>

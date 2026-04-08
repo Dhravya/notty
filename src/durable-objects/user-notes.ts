@@ -97,10 +97,12 @@ export class UserNotesDurableObject extends DurableObject {
                     width INTEGER,
                     height INTEGER,
                     published INTEGER NOT NULL DEFAULT 0,
+                    caption TEXT,
                     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
                     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
                 )
             `);
+            migrate("ALTER TABLE media ADD COLUMN caption TEXT");
         });
     }
 
@@ -616,7 +618,7 @@ export class UserNotesDurableObject extends DurableObject {
         // --- Media routes ---
         if (request.method === "GET" && path === "/media") {
             const rows = this.sql.exec(
-                "SELECT id, type, filename, r2_key, mime_type, size, width, height, published, created_at, updated_at FROM media ORDER BY created_at DESC"
+                "SELECT id, type, filename, r2_key, mime_type, size, width, height, published, caption, created_at, updated_at FROM media ORDER BY created_at DESC"
             ).toArray();
             return Response.json(rows);
         }
@@ -646,9 +648,18 @@ export class UserNotesDurableObject extends DurableObject {
             this.sql.exec("UPDATE media SET published = ?, updated_at = unixepoch() WHERE id = ?", published ? 1 : 0, id);
             return Response.json({ ok: true });
         }
+        if (request.method === "PATCH" && path.match(/^\/media\/[^/]+\/caption$/)) {
+            const id = path.split("/")[2];
+            const { caption } = (await request.json()) as { caption: string };
+            if (typeof caption !== "string" || caption.length > 2000) {
+                return new Response("Invalid caption", { status: 400 });
+            }
+            this.sql.exec("UPDATE media SET caption = ?, updated_at = unixepoch() WHERE id = ?", caption, id);
+            return Response.json({ ok: true });
+        }
         if (request.method === "GET" && path === "/public-media") {
             const rows = this.sql.exec(
-                "SELECT id, type, filename, r2_key, mime_type, size, width, height, created_at FROM media WHERE published = 1 ORDER BY created_at DESC"
+                "SELECT id, type, filename, r2_key, mime_type, size, width, height, caption, created_at FROM media WHERE published = 1 ORDER BY created_at DESC"
             ).toArray();
             return Response.json(rows);
         }

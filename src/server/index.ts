@@ -597,8 +597,11 @@ app.post("/api/media", async (c) => {
     const maxSize = 50 * 1024 * 1024; // 50MB
     if (file.size > maxSize) return c.text("File too large (max 50MB)", 413);
 
-    const allowed = ["image/", "video/"];
-    if (!allowed.some((t) => file.type.startsWith(t))) return c.text("Only images and videos allowed", 415);
+    const allowedPrefixes = ["image/", "video/"];
+    const allowedExact = ["application/pdf"];
+    if (!allowedPrefixes.some((p) => file.type.startsWith(p)) && !allowedExact.includes(file.type)) {
+        return c.text("Only images, videos, and PDFs allowed", 415);
+    }
 
     const id = crypto.randomUUID();
     const ext = file.name.split(".").pop() || "bin";
@@ -608,7 +611,7 @@ app.post("/api/media", async (c) => {
         httpMetadata: { contentType: file.type },
     });
 
-    const type = file.type.startsWith("video/") ? "video" : "image";
+    const type = file.type.startsWith("video/") ? "video" : file.type === "application/pdf" ? "pdf" : "image";
 
     // Parse dimensions from form data (client can extract these)
     const width = parseInt(formData.get("width") as string) || undefined;
@@ -637,6 +640,15 @@ app.post("/api/media/:id/publish", async (c) => {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ published }),
+    }));
+});
+
+app.patch("/api/media/:id/caption", async (c) => {
+    const body = await c.req.text();
+    return c.var.userStub.fetch(new Request(`https://do/media/${c.req.param("id")}/caption`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body,
     }));
 });
 

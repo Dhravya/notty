@@ -248,6 +248,7 @@ export class DesktopAdapter implements NottyAdapter {
     async uploadMedia(): Promise<MediaItem> { throw new Error("Media upload requires cloud"); }
     async deleteMedia(): Promise<void> { throw new Error("Media requires cloud"); }
     async publishMedia(): Promise<void> { throw new Error("Media requires cloud"); }
+    async updateMediaCaption(): Promise<void> { throw new Error("Media requires cloud"); }
     getMediaUrl(): string { return ""; }
 
     // Publishing — not available on desktop

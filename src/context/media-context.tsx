@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { toast } from "sonner";
 import { useAdapter } from "./adapter-context";
 import { useAuth } from "./auth-context";
 import type { MediaItem } from "@/lib/adapter";
@@ -52,6 +53,7 @@ export function MediaProvider({ children }: { children: ReactNode }) {
     const publishMedia = useCallback(async (id: string, published: boolean) => {
         setMedia((prev) => prev.map((m) => m.id === id ? { ...m, published: published ? 1 : 0 } : m));
         await adapter.publishMedia(id, published);
+        toast(published ? "Made public" : "Made private");
     }, [adapter]);
 
     const updateCaption = useCallback(async (id: string, caption: string) => {

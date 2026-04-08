@@ -138,6 +138,28 @@ pub fn save_note(
 }
 
 #[tauri::command]
+pub fn move_note_to_folder(db: tauri::State<Database>, id: String, folder_id: Option<String>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE notes SET folder_id = ?2, updated_at = unixepoch() WHERE id = ?1",
+        params![id, folder_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_sync_mode(db: tauri::State<Database>, id: String, sync_mode: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE notes SET sync_mode = ?2 WHERE id = ?1",
+        params![id, sync_mode],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn delete_note(db: tauri::State<Database>, id: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM notes WHERE id = ?1", params![id])

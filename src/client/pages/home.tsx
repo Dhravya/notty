@@ -10,6 +10,7 @@ import { useFolders } from "@/context/folders-context";
 import { useMedia } from "@/context/media-context";
 import { useHotkeys } from "@/lib/hotkeys";
 import { useIsDark } from "@/lib/dark-mode";
+import { OfflineBanner } from "@/components/sync-status";
 
 function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
     return new Promise((resolve) => {
@@ -316,6 +317,7 @@ export function HomePage() {
                     )}
                 </div>
             </div>
+            <OfflineBanner />
         </AppLayout>
     );
 }

@@ -105,7 +105,6 @@ export class WebAdapter implements NottyAdapter {
             await assertOk(res, "Failed to fetch note");
             return res.json();
         } catch {
-            // Offline — check cache
             const cached = await getCachedNotes();
             return cached.find((n) => n.id === id) ?? null;
         }
@@ -119,7 +118,6 @@ export class WebAdapter implements NottyAdapter {
             if (!res.ok) return null;
             return res.json();
         } catch {
-            // Offline — let the editor open anyway (Yjs has the content)
             return null;
         }
     }
@@ -131,14 +129,29 @@ export class WebAdapter implements NottyAdapter {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-        }).catch(() => {
-            // Offline — Yjs/IndexedDB already has the content, it'll sync when back online
-        });
+        }).catch(() => {});
     }
 
     async deleteNote(id: string): Promise<void> {
         const res = await fetch(`/api/notes/${id}`, { method: "DELETE" });
         await assertOk(res, "Failed to delete note");
+    }
+
+    async getTrash(): Promise<Note[]> {
+        const res = await fetch("/api/notes-trash");
+        await assertOk(res, "Failed to fetch trash");
+        return res.json();
+    }
+
+    async restoreNote(id: string): Promise<Note | null> {
+        const res = await fetch(`/api/notes/${id}/restore`, { method: "POST" });
+        await assertOk(res, "Failed to restore note");
+        return res.json();
+    }
+
+    async permanentlyDeleteNote(id: string): Promise<void> {
+        const res = await fetch(`/api/notes/${id}/permanent`, { method: "DELETE" });
+        await assertOk(res, "Failed to permanently delete note");
     }
 
     async getFolders(): Promise<Folder[]> {

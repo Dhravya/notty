@@ -85,6 +85,7 @@ export class UserNotesDurableObject extends DurableObject {
                 )
             `);
             migrate("ALTER TABLE notes ADD COLUMN current_branch_id TEXT");
+            migrate("ALTER TABLE notes ADD COLUMN deleted_at INTEGER");
 
             this.sql.exec(`
                 CREATE TABLE IF NOT EXISTS media (
@@ -204,10 +205,8 @@ export class UserNotesDurableObject extends DurableObject {
             );
         }
 
-        // Advance branch HEAD
         this.sql.exec("UPDATE note_branches SET head_version_id = ? WHERE id = ?", id, branch.id);
 
-        // Prune old versions (keep 100 per note across all branches)
         this.sql.exec(`
             DELETE FROM note_versions WHERE note_id = ? AND id NOT IN (
                 SELECT id FROM note_versions WHERE note_id = ? ORDER BY created_at DESC LIMIT 100
@@ -215,9 +214,7 @@ export class UserNotesDurableObject extends DurableObject {
         `, noteId, noteId);
     }
 
-    // Walk back to nearest checkpoint, then apply patches forward to reconstruct content
     private reconstructVersion(versionId: string, noteId: string): string {
-        // Collect chain from target back to a checkpoint
         const chain: { id: string; data: string; is_checkpoint: number; parent_id: string | null }[] = [];
         let currentId: string | null = versionId;
 
@@ -233,12 +230,10 @@ export class UserNotesDurableObject extends DurableObject {
 
         if (chain.length === 0) return '';
         if (!chain[0].is_checkpoint) {
-            // No checkpoint found in chain — fall back to current note content
             const note = this.getNote(noteId);
             return (note?.content as string) || '';
         }
 
-        // First entry is a checkpoint (full content), rest are patches
         let content = chain[0].data;
         for (let i = 1; i < chain.length; i++) {
             content = applyPatch(content, chain[i].data);
@@ -325,6 +320,9 @@ export class UserNotesDurableObject extends DurableObject {
         if (request.method === "GET" && path === "/notes") {
             return Response.json(this.getAllNotes());
         }
+        if (request.method === "GET" && path === "/notes/trash") {
+            return Response.json(this.getTrashNotes());
+        }
         if (request.method === "GET" && path.startsWith("/notes/") && !path.includes("/", "/notes/".length)) {
             const id = path.slice("/notes/".length);
             const note = this.getNote(id);
@@ -358,10 +356,25 @@ export class UserNotesDurableObject extends DurableObject {
         }
         if (request.method === "DELETE" && path.startsWith("/notes/") && !path.includes("/", "/notes/".length)) {
             const id = path.slice("/notes/".length);
-            this.sql.exec("DELETE FROM notes WHERE id = ?", id);
+            this.sql.exec("UPDATE notes SET deleted_at = unixepoch() WHERE id = ?", id);
             this.docs.delete(id);
             this.broadcastJson({ type: "note-deleted", id });
             return new Response("OK");
+        }
+
+        // Trash (restore + permanent delete)
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/restore$/)) {
+            const id = path.split("/")[2];
+            this.sql.exec("UPDATE notes SET deleted_at = NULL, updated_at = unixepoch() WHERE id = ?", id);
+            const note = this.getNote(id);
+            this.broadcastJson({ type: "note-updated", note });
+            return Response.json(note);
+        }
+        if (request.method === "DELETE" && path.match(/^\/notes\/[^/]+\/permanent$/)) {
+            const id = path.split("/")[2];
+            this.sql.exec("DELETE FROM notes WHERE id = ?", id);
+            this.docs.delete(id);
+            return Response.json({ ok: true });
         }
 
         // PATCH endpoints for partial field updates
@@ -740,7 +753,13 @@ export class UserNotesDurableObject extends DurableObject {
 
     private getAllNotes() {
         return this.sql
-            .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, created_at, updated_at FROM notes ORDER BY updated_at DESC")
+            .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, created_at, updated_at FROM notes WHERE deleted_at IS NULL ORDER BY updated_at DESC")
+            .toArray();
+    }
+
+    private getTrashNotes() {
+        return this.sql
+            .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, deleted_at, created_at, updated_at FROM notes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
             .toArray();
     }
 

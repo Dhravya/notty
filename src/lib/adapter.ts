@@ -11,6 +11,7 @@ export type Note = {
     published?: boolean | number;
     published_at?: number | null;
     color?: string | null;
+    deleted_at?: number | null;
     created_at: number;
     updated_at: number;
 };
@@ -111,6 +112,9 @@ export interface NottyAdapter {
     getNoteMeta(id: string, shareToken?: string): Promise<Partial<Note> | null>;
     saveNote(id: string, title: string, content: string, folderId?: string | null): void;
     deleteNote(id: string): Promise<void>;
+    getTrash(): Promise<Note[]>;
+    restoreNote(id: string): Promise<Note | null>;
+    permanentlyDeleteNote(id: string): Promise<void>;
 
     // Folders
     getFolders(): Promise<Folder[]>;

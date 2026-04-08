@@ -79,7 +79,7 @@ export function NotePage() {
     }, [id, adapter, shareToken, authLoading, user]);
 
     useHotkeys([
-        { key: "escape", handler: () => navigate("/", { viewTransition: true }) },
+        { key: "escape", handler: () => navigate("/", { viewTransition: true }), allowInInput: true },
     ]);
 
     // Fade out controls after 3s of no mouse movement

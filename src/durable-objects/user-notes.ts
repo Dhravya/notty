@@ -85,6 +85,22 @@ export class UserNotesDurableObject extends DurableObject {
                 )
             `);
             migrate("ALTER TABLE notes ADD COLUMN current_branch_id TEXT");
+
+            this.sql.exec(`
+                CREATE TABLE IF NOT EXISTS media (
+                    id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL DEFAULT 'image',
+                    filename TEXT NOT NULL,
+                    r2_key TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    size INTEGER NOT NULL DEFAULT 0,
+                    width INTEGER,
+                    height INTEGER,
+                    published INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                )
+            `);
         });
     }
 
@@ -559,6 +575,46 @@ export class UserNotesDurableObject extends DurableObject {
                 `SELECT n.id, n.title, n.content, n.published_at, n.created_at, f.name as folder_name
                  FROM notes n LEFT JOIN folders f ON n.folder_id = f.id
                  WHERE n.published = 1 ORDER BY n.published_at DESC`
+            ).toArray();
+            return Response.json(rows);
+        }
+
+        // --- Media routes ---
+        if (request.method === "GET" && path === "/media") {
+            const rows = this.sql.exec(
+                "SELECT id, type, filename, r2_key, mime_type, size, width, height, published, created_at, updated_at FROM media ORDER BY created_at DESC"
+            ).toArray();
+            return Response.json(rows);
+        }
+        if (request.method === "POST" && path === "/media") {
+            const body = (await request.json()) as {
+                id: string; type: string; filename: string; r2_key: string;
+                mime_type: string; size: number; width?: number; height?: number;
+            };
+            this.sql.exec(
+                `INSERT INTO media (id, type, filename, r2_key, mime_type, size, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                body.id, body.type, body.filename, body.r2_key, body.mime_type, body.size, body.width ?? null, body.height ?? null
+            );
+            const rows = this.sql.exec("SELECT * FROM media WHERE id = ?", body.id).toArray();
+            this.broadcastJson({ type: "media-added", media: rows[0] });
+            return Response.json(rows[0]);
+        }
+        if (request.method === "DELETE" && path.startsWith("/media/")) {
+            const id = path.slice("/media/".length);
+            const rows = this.sql.exec("SELECT r2_key FROM media WHERE id = ?", id).toArray();
+            this.sql.exec("DELETE FROM media WHERE id = ?", id);
+            this.broadcastJson({ type: "media-deleted", id });
+            return Response.json({ ok: true, r2_key: rows[0]?.r2_key });
+        }
+        if (request.method === "PATCH" && path.match(/^\/media\/[^/]+\/published$/)) {
+            const id = path.split("/")[2];
+            const { published } = (await request.json()) as { published: boolean };
+            this.sql.exec("UPDATE media SET published = ?, updated_at = unixepoch() WHERE id = ?", published ? 1 : 0, id);
+            return Response.json({ ok: true });
+        }
+        if (request.method === "GET" && path === "/public-media") {
+            const rows = this.sql.exec(
+                "SELECT id, type, filename, r2_key, mime_type, size, width, height, created_at FROM media WHERE published = 1 ORDER BY created_at DESC"
             ).toArray();
             return Response.json(rows);
         }

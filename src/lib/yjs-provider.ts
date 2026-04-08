@@ -20,6 +20,7 @@ export class NottyProvider {
     private reconnectDelay = 1000;
 
     private shareToken: string | undefined;
+    private offlineOnly: boolean;
 
     constructor(
         private noteId: string,
@@ -28,7 +29,7 @@ export class NottyProvider {
     ) {
         this.doc = doc;
         this.awareness = new awarenessProtocol.Awareness(doc);
-
+        this.offlineOnly = options?.connect === false;
         this.shareToken = options?.shareToken;
 
         // Offline persistence — loads cached doc from IndexedDB immediately
@@ -63,7 +64,7 @@ export class NottyProvider {
     }
 
     connect() {
-        if (this.destroyed) return;
+        if (this.destroyed || this.offlineOnly) return;
         let wsUrl: string;
         if (this.serverUrl) {
             const proto = this.serverUrl.startsWith("https") ? "wss:" : "ws:";

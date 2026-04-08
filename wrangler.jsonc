@@ -45,6 +45,12 @@
 		{ "pattern": "notty.page", "custom_domain": true },
 		{ "pattern": "*.notty.page/*", "zone_name": "notty.page" }
 	],
+	"r2_buckets": [
+		{
+			"binding": "MEDIA_BUCKET",
+			"bucket_name": "notty-media"
+		}
+	],
 	"vars": {
 		"BASE_DOMAIN": "notty.page"
 	}

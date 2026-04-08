@@ -13,6 +13,7 @@ import { useAdapter } from "@/context/adapter-context";
 import { useAuth } from "@/context/auth-context";
 import { formatEntryDate } from "@/lib/date-utils";
 import { useHotkeys } from "@/lib/hotkeys";
+import { StorageBadge, OfflineBanner } from "@/components/sync-status";
 
 export function NotePage() {
     const { id } = useParams<{ id: string }>();
@@ -193,9 +194,7 @@ export function NotePage() {
                         </span>
                     )}
 
-                    {note?.sync_mode === "local" && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-sidebar-active)]">Local</span>
-                    )}
+                    <StorageBadge syncMode={note?.sync_mode as "cloud" | "local" | undefined} />
 
                     {/* Owner-only controls */}
                     {isOwner && <PublishToggle noteId={id} />}
@@ -278,6 +277,7 @@ export function NotePage() {
             )}
             <CommandPalette />
             <ShortcutsHelp />
+            <OfflineBanner />
         </div>
     );
 }

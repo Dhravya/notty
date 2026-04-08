@@ -562,6 +562,119 @@ app.get("/api/profile", async (c) => {
     });
 });
 
+// --- Media API ---
+app.use("/api/media/*", async (c, next) => {
+    const session = await getSession(c.env, c.req.raw);
+    if (!session) return c.text("Unauthorized", 401);
+    c.set("userId", session.user.id);
+    c.set("userName", session.user.name || "Anonymous");
+    c.set("userStub", c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(session.user.id)));
+    return next();
+});
+app.use("/api/media", async (c, next) => {
+    const session = await getSession(c.env, c.req.raw);
+    if (!session) return c.text("Unauthorized", 401);
+    c.set("userId", session.user.id);
+    c.set("userName", session.user.name || "Anonymous");
+    c.set("userStub", c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(session.user.id)));
+    return next();
+});
+
+app.get("/api/media", (c) => c.var.userStub.fetch(new Request("https://do/media")));
+
+app.post("/api/media", async (c) => {
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File | null;
+    if (!file) return c.text("No file provided", 400);
+
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (file.size > maxSize) return c.text("File too large (max 50MB)", 413);
+
+    const allowed = ["image/", "video/"];
+    if (!allowed.some((t) => file.type.startsWith(t))) return c.text("Only images and videos allowed", 415);
+
+    const id = crypto.randomUUID();
+    const ext = file.name.split(".").pop() || "bin";
+    const r2Key = `${c.var.userId}/${id}.${ext}`;
+
+    await c.env.MEDIA_BUCKET.put(r2Key, file.stream(), {
+        httpMetadata: { contentType: file.type },
+    });
+
+    const type = file.type.startsWith("video/") ? "video" : "image";
+
+    // Parse dimensions from form data (client can extract these)
+    const width = parseInt(formData.get("width") as string) || undefined;
+    const height = parseInt(formData.get("height") as string) || undefined;
+
+    const res = await c.var.userStub.fetch(new Request("https://do/media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, type, filename: file.name, r2_key: r2Key, mime_type: file.type, size: file.size, width, height }),
+    }));
+    return new Response(res.body, { status: res.status, headers: res.headers });
+});
+
+app.delete("/api/media/:id", async (c) => {
+    const res = await c.var.userStub.fetch(new Request(`https://do/media/${c.req.param("id")}`, { method: "DELETE" }));
+    const data = await res.json() as any;
+    if (data.r2_key) {
+        await c.env.MEDIA_BUCKET.delete(data.r2_key);
+    }
+    return c.json({ ok: true });
+});
+
+app.post("/api/media/:id/publish", async (c) => {
+    const { published } = await c.req.json() as { published: boolean };
+    return c.var.userStub.fetch(new Request(`https://do/media/${c.req.param("id")}/published`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ published }),
+    }));
+});
+
+// Serve media files from R2
+app.get("/api/media/:id/file", async (c) => {
+    // Get metadata from DO
+    const session = await getSession(c.env, c.req.raw);
+    if (!session) return c.text("Unauthorized", 401);
+
+    const stub = c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(session.user.id));
+    const listRes = await stub.fetch(new Request("https://do/media"));
+    const items = await listRes.json() as any[];
+    const item = items.find((m: any) => m.id === c.req.param("id"));
+    if (!item) return c.text("Not found", 404);
+
+    const obj = await c.env.MEDIA_BUCKET.get(item.r2_key);
+    if (!obj) return c.text("File not found", 404);
+
+    return new Response(obj.body, {
+        headers: {
+            "Content-Type": item.mime_type,
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    });
+});
+
+// Public media file serving (no auth)
+app.get("/api/public/:userId/media/:id/file", async (c) => {
+    const stub = c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(c.req.param("userId")));
+    const listRes = await stub.fetch(new Request("https://do/public-media"));
+    const items = await listRes.json() as any[];
+    const item = items.find((m: any) => m.id === c.req.param("id"));
+    if (!item) return c.text("Not found", 404);
+
+    const obj = await c.env.MEDIA_BUCKET.get(item.r2_key);
+    if (!obj) return c.text("File not found", 404);
+
+    return new Response(obj.body, {
+        headers: {
+            "Content-Type": item.mime_type,
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    });
+});
+
 // --- Folders API ---
 app.get("/api/folders", (c) => c.var.userStub.fetch(new Request("https://do/folders")));
 app.post("/api/folders", (c) => c.var.userStub.fetch(new Request("https://do/folders", {

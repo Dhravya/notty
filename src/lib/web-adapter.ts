@@ -1,5 +1,5 @@
 import type * as Y from "yjs";
-import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile } from "./adapter";
+import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
 import { NottyProvider } from "./yjs-provider";
 import { authClient } from "./auth-client";
 
@@ -7,10 +7,73 @@ async function assertOk(res: Response, context: string) {
     if (!res.ok) throw new Error(`${context}: ${res.status} ${res.statusText}`);
 }
 
+// IndexedDB-backed cache for the notes list so the PWA works offline
+const IDB_STORE = "notty-pwa-cache";
+
+async function getCachedNotes(): Promise<Note[]> {
+    try {
+        const db = await openCache();
+        return await idbGet<Note[]>(db, "notes") ?? [];
+    } catch { return []; }
+}
+
+async function setCachedNotes(notes: Note[]): Promise<void> {
+    try {
+        const db = await openCache();
+        await idbPut(db, "notes", notes);
+    } catch {}
+}
+
+async function getCachedFolders(): Promise<Folder[]> {
+    try {
+        const db = await openCache();
+        return await idbGet<Folder[]>(db, "folders") ?? [];
+    } catch { return []; }
+}
+
+async function setCachedFolders(folders: Folder[]): Promise<void> {
+    try {
+        const db = await openCache();
+        await idbPut(db, "folders", folders);
+    } catch {}
+}
+
+function openCache(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(IDB_STORE, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("kv");
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function idbGet<T>(db: IDBDatabase, key: string): Promise<T | undefined> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readonly");
+        const req = tx.objectStore("kv").get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function idbPut(db: IDBDatabase, key: string, value: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readwrite");
+        const req = tx.objectStore("kv").put(value, key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
 export class WebAdapter implements NottyAdapter {
     async getSession(): Promise<User | null> {
-        const session = await authClient.getSession();
-        return (session.data?.user as User) ?? null;
+        try {
+            const session = await authClient.getSession();
+            return (session.data?.user as User) ?? null;
+        } catch {
+            // Offline — return cached local user so the app still renders
+            return { id: "offline", name: "Offline" };
+        }
     }
 
     async signIn(): Promise<User | null> {
@@ -23,24 +86,42 @@ export class WebAdapter implements NottyAdapter {
     }
 
     async getNotes(): Promise<Note[]> {
-        const res = await fetch("/api/notes");
-        await assertOk(res, "Failed to fetch notes");
-        return res.json();
+        try {
+            const res = await fetch("/api/notes");
+            await assertOk(res, "Failed to fetch notes");
+            const notes: Note[] = await res.json();
+            setCachedNotes(notes);
+            return notes;
+        } catch {
+            // Offline — serve from IndexedDB cache
+            return getCachedNotes();
+        }
     }
 
     async getNote(id: string): Promise<Note | null> {
-        const res = await fetch(`/api/notes/${id}`);
-        if (res.status === 404) return null;
-        await assertOk(res, "Failed to fetch note");
-        return res.json();
+        try {
+            const res = await fetch(`/api/notes/${id}`);
+            if (res.status === 404) return null;
+            await assertOk(res, "Failed to fetch note");
+            return res.json();
+        } catch {
+            // Offline — check cache
+            const cached = await getCachedNotes();
+            return cached.find((n) => n.id === id) ?? null;
+        }
     }
 
     async getNoteMeta(id: string, shareToken?: string): Promise<Partial<Note> | null> {
-        const params = shareToken ? `?share=${encodeURIComponent(shareToken)}` : "";
-        const res = await fetch(`/api/notes/${id}/meta${params}`);
-        if (res.status === 404) return null;
-        if (!res.ok) return null;
-        return res.json();
+        try {
+            const params = shareToken ? `?share=${encodeURIComponent(shareToken)}` : "";
+            const res = await fetch(`/api/notes/${id}/meta${params}`);
+            if (res.status === 404) return null;
+            if (!res.ok) return null;
+            return res.json();
+        } catch {
+            // Offline — let the editor open anyway (Yjs has the content)
+            return null;
+        }
     }
 
     saveNote(id: string, title: string, content: string, folderId?: string | null): void {
@@ -50,8 +131,8 @@ export class WebAdapter implements NottyAdapter {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-        }).catch((e) => {
-            console.error("Failed to save note:", e);
+        }).catch(() => {
+            // Offline — Yjs/IndexedDB already has the content, it'll sync when back online
         });
     }
 
@@ -61,9 +142,15 @@ export class WebAdapter implements NottyAdapter {
     }
 
     async getFolders(): Promise<Folder[]> {
-        const res = await fetch("/api/folders");
-        await assertOk(res, "Failed to fetch folders");
-        return res.json();
+        try {
+            const res = await fetch("/api/folders");
+            await assertOk(res, "Failed to fetch folders");
+            const folders: Folder[] = await res.json();
+            setCachedFolders(folders);
+            return folders;
+        } catch {
+            return getCachedFolders();
+        }
     }
 
     async saveFolder(folder: Partial<Folder> & { id: string; name: string }): Promise<void> {
@@ -212,6 +299,43 @@ export class WebAdapter implements NottyAdapter {
         const res = await fetch(`/api/notes/${noteId}/tree`);
         await assertOk(res, "Failed to fetch tree");
         return res.json();
+    }
+
+    // Media
+    async getMedia(): Promise<MediaItem[]> {
+        const res = await fetch("/api/media");
+        await assertOk(res, "Failed to fetch media");
+        return res.json();
+    }
+
+    async uploadMedia(file: File, dimensions?: { width: number; height: number }): Promise<MediaItem> {
+        const form = new FormData();
+        form.append("file", file);
+        if (dimensions) {
+            form.append("width", String(dimensions.width));
+            form.append("height", String(dimensions.height));
+        }
+        const res = await fetch("/api/media", { method: "POST", body: form });
+        await assertOk(res, "Failed to upload media");
+        return res.json();
+    }
+
+    async deleteMedia(id: string): Promise<void> {
+        const res = await fetch(`/api/media/${id}`, { method: "DELETE" });
+        await assertOk(res, "Failed to delete media");
+    }
+
+    async publishMedia(id: string, published: boolean): Promise<void> {
+        const res = await fetch(`/api/media/${id}/publish`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ published }),
+        });
+        await assertOk(res, "Failed to publish media");
+    }
+
+    getMediaUrl(id: string): string {
+        return `/api/media/${id}/file`;
     }
 
     // Publishing

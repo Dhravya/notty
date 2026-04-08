@@ -20,6 +20,7 @@ import {
     StrikethroughIcon,
     CodeIcon,
 } from "lucide-react";
+import { SaveIndicator } from "./sync-status";
 import * as Y from "yjs";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
@@ -58,8 +59,9 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
     const { user } = useAuth();
     const [ready, setReady] = useState(false);
     const editorRef = useRef<EditorInstance | null>(null);
-    const existingContentRef = useRef<JSONContent | null>(null);
     const lastSavedRef = useRef<string>("");
+    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+    const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
     const [showLines, setShowLines] = useState<boolean>(() => {
         try { return localStorage.getItem("notty-show-lines") !== "false"; }
@@ -98,12 +100,18 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
         if (!user || shareToken || readOnly) return;
         const json = editor.getJSON();
         const text = editor.getText().trim();
-        if (!text) return; // nothing typed yet, don't persist an empty note
+        if (!text) return;
         const content = JSON.stringify(json);
         if (content === lastSavedRef.current) return;
         lastSavedRef.current = content;
         const title = extractTitle(json);
+        setSaveState("saving");
         saveNote(noteId, title, content, folderId);
+        clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => {
+            setSaveState("saved");
+            savedTimerRef.current = setTimeout(() => setSaveState("idle"), 3000);
+        }, 400);
     }, [noteId, saveNote, user, shareToken, readOnly, folderId]);
 
     // Debounced save — fires 1.5s after last keystroke
@@ -159,7 +167,10 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
         return () => clearInterval(interval);
     }, [saveNow]);
 
-    // Load: IndexedDB first (fast), then HTTP, then connect WS
+    // Load: IndexedDB first (fast), then HTTP if Yjs doc is empty.
+    // We bootstrap HTTP content into the Yjs doc directly (via a temporary
+    // TipTap editor) so the Collaboration extension renders it exactly once.
+    const bootstrapRef = useRef<JSONContent | null>(null);
     useEffect(() => {
         let cancelled = false;
 
@@ -176,15 +187,18 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
                 return;
             }
 
+            // Yjs doc is empty — try to bootstrap from HTTP
             Promise.race([
                 adapter.getNote(noteId).catch(() => null),
                 new Promise((r) => setTimeout(() => r(null), 500)),
             ]).then((data: any) => {
                 if (cancelled) return;
-                if (data?.content) {
+                if (data?.content && ydoc.getXmlFragment("default").length <= 1) {
                     try {
                         const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
-                        if (parsed?.type === "doc") existingContentRef.current = parsed;
+                        if (parsed?.type === "doc" && parsed.content?.length) {
+                            bootstrapRef.current = parsed;
+                        }
                     } catch {}
                 }
                 setReady(true);
@@ -282,11 +296,11 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
                     }}
                     onCreate={({ editor }) => {
                         editorRef.current = editor;
-                        if (existingContentRef.current) {
-                            const text = editor.getText().trim();
-                            if (!text) {
-                                editor.commands.setContent(existingContentRef.current);
-                            }
+                        // Bootstrap from HTTP only if the Yjs doc is still empty.
+                        // setContent is safe here because Collaboration has nothing to render yet.
+                        if (bootstrapRef.current && !editor.getText().trim()) {
+                            editor.commands.setContent(bootstrapRef.current);
+                            bootstrapRef.current = null;
                         }
                         if (!readOnly) editor.commands.focus("end");
                     }}
@@ -337,6 +351,13 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
                     )}
                 </EditorContent>
             </EditorRoot>
+
+            {/* Save status — bottom right, subtle */}
+            {!readOnly && !shareToken && (
+                <div className="absolute bottom-4 right-6 z-10">
+                    <SaveIndicator saveState={saveState} />
+                </div>
+            )}
         </div>
     );
 }

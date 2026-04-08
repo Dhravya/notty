@@ -79,6 +79,20 @@ export type Folder = {
     updated_at: number;
 };
 
+export type MediaItem = {
+    id: string;
+    type: "image" | "video";
+    filename: string;
+    r2_key: string;
+    mime_type: string;
+    size: number;
+    width?: number | null;
+    height?: number | null;
+    published?: boolean | number;
+    created_at: number;
+    updated_at: number;
+};
+
 export type User = {
     id: string;
     name?: string;
@@ -127,6 +141,13 @@ export interface NottyAdapter {
     checkoutBranch(noteId: string, branchId: string): Promise<{ branch: string; content: string }>;
     deleteBranch(noteId: string, branchId: string): Promise<void>;
     getNoteTree(noteId: string): Promise<NoteTree>;
+
+    // Media
+    getMedia(): Promise<MediaItem[]>;
+    uploadMedia(file: File, dimensions?: { width: number; height: number }): Promise<MediaItem>;
+    deleteMedia(id: string): Promise<void>;
+    publishMedia(id: string, published: boolean): Promise<void>;
+    getMediaUrl(id: string): string;
 
     // Publishing
     publishNote(noteId: string, published: boolean): Promise<void>;

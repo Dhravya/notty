@@ -38,6 +38,8 @@ fn main() {
             db::get_notes,
             db::get_note,
             db::save_note,
+            db::move_note_to_folder,
+            db::set_sync_mode,
             db::delete_note,
             db::get_folders,
             db::save_folder,

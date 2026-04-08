@@ -294,6 +294,48 @@ app.delete("/api/notes/:id", async (c) => {
     return c.var.userStub.fetch(new Request(`https://do/notes/${id}`, { method: "DELETE" }));
 });
 
+// --- Branches ---
+app.get("/api/notes/:id/branches", (c) =>
+    c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/branches`))
+);
+app.post("/api/notes/:id/branches", async (c) => {
+    const body = await c.req.text();
+    return c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/branches`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+    }));
+});
+app.post("/api/notes/:id/branches/checkout", async (c) => {
+    const body = await c.req.text();
+    return c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/branches/checkout`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+    }));
+});
+app.delete("/api/notes/:id/branches/:branchId", (c) =>
+    c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/branches/${c.req.param("branchId")}`, { method: "DELETE" }))
+);
+
+// --- Tree (full graph) ---
+app.get("/api/notes/:id/tree", (c) =>
+    c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/tree`))
+);
+
+// --- Note History ---
+app.get("/api/notes/:id/history", async (c) => {
+    const id = c.req.param("id");
+    return c.var.userStub.fetch(new Request(`https://do/notes/${id}/history`));
+});
+app.get("/api/notes/:id/history/:versionId", async (c) => {
+    const { id, versionId } = c.req.param();
+    return c.var.userStub.fetch(new Request(`https://do/notes/${id}/history/${versionId}`));
+});
+app.post("/api/notes/:id/history/restore", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.text();
+    return c.var.userStub.fetch(new Request(`https://do/notes/${id}/history/restore`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+    }));
+});
+
 // Note metadata (safe for lock checks, includes permission for shared notes)
 app.get("/api/notes/:id/meta", async (c) => {
     const id = c.req.param("id");

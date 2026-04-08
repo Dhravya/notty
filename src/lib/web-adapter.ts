@@ -1,5 +1,5 @@
 import type * as Y from "yjs";
-import type { NottyAdapter, Note, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
+import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
 import { NottyProvider } from "./yjs-provider";
 import { authClient } from "./auth-client";
 
@@ -236,6 +236,68 @@ export class WebAdapter implements NottyAdapter {
             method: "POST",
         });
         await assertOk(res, "Failed to verify lock");
+        return res.json();
+    }
+
+    // History (git-style versioning — server reconstructs content from patches)
+    async getNoteHistory(noteId: string): Promise<NoteVersion[]> {
+        const res = await fetch(`/api/notes/${noteId}/history`);
+        await assertOk(res, "Failed to fetch note history");
+        return res.json();
+    }
+
+    async getVersion(noteId: string, versionId: string): Promise<NoteVersion | null> {
+        const res = await fetch(`/api/notes/${noteId}/history/${versionId}`);
+        if (res.status === 404) return null;
+        await assertOk(res, "Failed to fetch version");
+        return res.json();
+    }
+
+    async restoreVersion(noteId: string, versionId: string): Promise<Note | null> {
+        const res = await fetch(`/api/notes/${noteId}/history/restore`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ version_id: versionId }),
+        });
+        await assertOk(res, "Failed to restore version");
+        return res.json();
+    }
+
+    // Branches
+    async getBranches(noteId: string): Promise<NoteBranch[]> {
+        const res = await fetch(`/api/notes/${noteId}/branches`);
+        await assertOk(res, "Failed to fetch branches");
+        return res.json();
+    }
+
+    async createBranch(noteId: string, name: string): Promise<NoteBranch> {
+        const res = await fetch(`/api/notes/${noteId}/branches`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+        });
+        await assertOk(res, "Failed to create branch");
+        return res.json();
+    }
+
+    async checkoutBranch(noteId: string, branchId: string): Promise<{ branch: string; content: string }> {
+        const res = await fetch(`/api/notes/${noteId}/branches/checkout`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ branch_id: branchId }),
+        });
+        await assertOk(res, "Failed to checkout branch");
+        return res.json();
+    }
+
+    async deleteBranch(noteId: string, branchId: string): Promise<void> {
+        const res = await fetch(`/api/notes/${noteId}/branches/${branchId}`, { method: "DELETE" });
+        await assertOk(res, "Failed to delete branch");
+    }
+
+    async getNoteTree(noteId: string): Promise<NoteTree> {
+        const res = await fetch(`/api/notes/${noteId}/tree`);
+        await assertOk(res, "Failed to fetch tree");
         return res.json();
     }
 

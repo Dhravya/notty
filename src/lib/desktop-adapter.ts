@@ -1,4 +1,4 @@
-import type { NottyAdapter, Note, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
+import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
 import type * as Y from "yjs";
 import { NottyProvider } from "./yjs-provider";
 import { authClient } from "./auth-client";
@@ -226,6 +226,16 @@ export class DesktopAdapter implements NottyAdapter {
     async listShares(): Promise<Share[]> { return []; }
     async deleteShare(): Promise<void> {}
     async getSharedWithMe(): Promise<SharedNote[]> { return []; }
+
+    // History & branches — not available on desktop (cloud only)
+    async getNoteHistory(): Promise<NoteVersion[]> { return []; }
+    async getVersion(): Promise<NoteVersion | null> { return null; }
+    async restoreVersion(): Promise<Note | null> { throw new Error("History requires cloud"); }
+    async getBranches(): Promise<NoteBranch[]> { return []; }
+    async createBranch(): Promise<NoteBranch> { throw new Error("Branches require cloud"); }
+    async checkoutBranch(): Promise<{ branch: string; content: string }> { throw new Error("Branches require cloud"); }
+    async deleteBranch(): Promise<void> { throw new Error("Branches require cloud"); }
+    async getNoteTree(): Promise<NoteTree> { return { branches: [], versions: [], sync_mode: "local" }; }
 
     // Locking — not available on desktop
     async lockNote(): Promise<void> { throw new Error("Locking requires cloud"); }

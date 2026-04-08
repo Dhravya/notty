@@ -49,10 +49,10 @@ self.addEventListener("fetch", (e) => {
                 }
                 return res;
             }).catch(() => {
-                // Offline: if we have nothing cached for a navigation, serve the shell
                 if (e.request.mode === "navigate") {
                     return caches.match("/");
                 }
+                return new Response("", { status: 503, statusText: "Offline" });
             });
 
             return cached || fetchPromise;

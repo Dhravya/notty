@@ -235,6 +235,7 @@ export class DesktopAdapter implements NottyAdapter {
     async createBranch(): Promise<NoteBranch> { throw new Error("Branches require cloud"); }
     async checkoutBranch(): Promise<{ branch: string; content: string }> { throw new Error("Branches require cloud"); }
     async deleteBranch(): Promise<void> { throw new Error("Branches require cloud"); }
+    async mergeBranch(): Promise<{ ok: boolean; source_branch: string }> { throw new Error("Branches require cloud"); }
     async getNoteTree(): Promise<NoteTree> { return { branches: [], versions: [], sync_mode: "local" }; }
 
     // Locking — not available on desktop

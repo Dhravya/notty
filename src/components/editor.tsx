@@ -53,7 +53,7 @@ const FONT_STYLES: Record<FontChoice, React.CSSProperties> = {
     mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
 };
 
-export function Editor({ noteId, shareToken, readOnly = false, folderId }: { noteId: string; shareToken?: string; readOnly?: boolean; folderId?: string | null }) {
+export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGuardRef }: { noteId: string; shareToken?: string; readOnly?: boolean; folderId?: string | null; saveGuardRef?: React.MutableRefObject<boolean> }) {
     const { saveNote } = useNotes();
     const adapter = useAdapter();
     const { user } = useAuth();
@@ -105,7 +105,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
     // For shared notes, Yjs WebSocket is the source of truth — skip HTTP saves
     // Don't create empty untitled notes — only save if user actually typed something
     const saveNow = useCallback((editor: EditorInstance) => {
-        if (!user || shareToken || readOnly) return;
+        if (!user || shareToken || readOnly || saveGuardRef?.current) return;
         const json = editor.getJSON();
         const text = editor.getText().trim();
         if (!text) return;
@@ -152,9 +152,10 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
         if (shareToken) return;
         const isTauri = "__TAURI_INTERNALS__" in window;
         const onBeforeUnload = () => {
+            if (saveGuardRef?.current) return; // content reset in progress
             if (editorRef.current && !isTauri) {
                 const text = editorRef.current.getText().trim();
-                if (!text) return; // don't persist empty notes
+                if (!text) return;
                 const json = editorRef.current.getJSON();
                 const content = JSON.stringify(json);
                 if (content !== lastSavedRef.current) {
@@ -222,8 +223,14 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId }: { not
     }, [user, ready, provider]);
 
     useEffect(() => () => {
-        // Flush debounced save before unmount
-        debouncedSave.flush();
+        // On content reset (checkout/restore/merge), cancel pending saves
+        // so they don't overwrite the new content. Otherwise flush normally.
+        if (saveGuardRef?.current) {
+            debouncedSave.cancel();
+            saveGuardRef.current = false;
+        } else {
+            debouncedSave.flush();
+        }
         provider.destroy();
         ydoc.destroy();
     }, [provider, ydoc, debouncedSave]);

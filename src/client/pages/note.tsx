@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import { ArrowLeft, LayoutGrid, Share2, Lock, Unlock, History, GitBranch } from "lucide-react";
 import { Editor } from "@/components/editor";
@@ -30,10 +30,25 @@ export function NotePage() {
     const [showControls, setShowControls] = useState(true);
     const [showShare, setShowShare] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
-    const [editorKey, setEditorKey] = useState(0); // bump to force editor re-mount on branch switch
+    const [editorKey, setEditorKey] = useState(0);
     const [lockToken, setLockToken] = useState<string | null>(null);
     const [noteState, setNoteState] = useState<"checking" | "locked" | "ready" | "not-found">("checking");
     const [noteMeta, setNoteMeta] = useState<any>(null);
+
+    // Save guard: blocks editor saves during checkout/restore/merge
+    // so the old editor's unmount flush can't overwrite new branch content
+    const saveGuardRef = useRef(false);
+
+    // Called AFTER the API call completes (guard already set by NoteHistory).
+    // Cleans up stale state and remounts the editor.
+    const handleContentReset = useCallback(async () => {
+        setShowHistory(false);
+        await new Promise<void>((resolve) => {
+            const req = indexedDB.deleteDatabase(`notty-${id}`);
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+        });
+        setEditorKey((k) => k + 1);
+    }, [id]);
 
     // Check note access + lock state — wait for auth first
     useEffect(() => {
@@ -255,7 +270,7 @@ export function NotePage() {
             {/* Editor */}
             <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-14 sm:pt-16 pb-16 sm:pb-24">
                 <div className="bg-[var(--color-card)] border border-[var(--color-border-warm)] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04),0_12px_32px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),0_12px_32px_rgba(0,0,0,0.2)] min-h-[85vh]">
-                    <Editor key={`${id}-${editorKey}`} noteId={id} shareToken={shareToken} readOnly={isViewOnly} folderId={folderId} />
+                    <Editor key={`${id}-${editorKey}`} noteId={id} shareToken={shareToken} readOnly={isViewOnly} folderId={folderId} saveGuardRef={saveGuardRef} />
                 </div>
             </div>
 
@@ -264,14 +279,8 @@ export function NotePage() {
                 <NoteHistory
                     noteId={id}
                     currentContent={note?.content || ""}
-                    onRestore={() => {
-                        setShowHistory(false);
-                        setEditorKey((k) => k + 1);
-                    }}
-                    onBranchSwitch={() => {
-                        setShowHistory(false);
-                        setEditorKey((k) => k + 1);
-                    }}
+                    saveGuardRef={saveGuardRef}
+                    onContentReset={handleContentReset}
                     onClose={() => setShowHistory(false)}
                 />
             )}

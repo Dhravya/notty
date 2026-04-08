@@ -314,6 +314,13 @@ app.delete("/api/notes/:id/branches/:branchId", (c) =>
     c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/branches/${c.req.param("branchId")}`, { method: "DELETE" }))
 );
 
+app.post("/api/notes/:id/branches/merge", async (c) => {
+    const body = await c.req.text();
+    return c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/branches/merge`, {
+        method: "POST", body, headers: { "Content-Type": "application/json" },
+    }));
+});
+
 // --- Tree (full graph) ---
 app.get("/api/notes/:id/tree", (c) =>
     c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/tree`))

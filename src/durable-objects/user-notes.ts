@@ -246,6 +246,22 @@ export class UserNotesDurableObject extends DurableObject {
         return content;
     }
 
+    // Evict Yjs doc, cancel save timer, and close all WS connections for a note.
+    // This forces clients to reconnect and get fresh content from yjs_state/content.
+    private resetNoteSync(noteId: string) {
+        const doc = this.docs.get(noteId);
+        if (doc) {
+            this.docs.delete(noteId);
+            const timer = this.saveTimers.get(noteId);
+            if (timer) { clearTimeout(timer); this.saveTimers.delete(noteId); }
+        }
+        // Close all WebSocket connections for this note so clients can't
+        // push stale Yjs state back into a freshly created doc
+        for (const ws of this.ctx.getWebSockets(noteId)) {
+            try { ws.close(4000, "content-reset"); } catch {}
+        }
+    }
+
     private flushPendingSave(noteId: string) {
         const timer = this.saveTimers.get(noteId);
         if (!timer) return;
@@ -438,6 +454,12 @@ export class UserNotesDurableObject extends DurableObject {
             ).toArray()[0] as any;
             if (!branch) return new Response("Branch not found", { status: 404 });
 
+            // Version the current state before switching (so no work is lost)
+            const currentNote = this.getNote(noteId);
+            if (currentNote?.content) {
+                this.createVersion(noteId, currentNote.title || "Untitled", currentNote.content as string, "auto-backup");
+            }
+
             // Switch current branch
             this.sql.exec("UPDATE notes SET current_branch_id = ?, updated_at = unixepoch() WHERE id = ?", branch_id, noteId);
 
@@ -447,18 +469,11 @@ export class UserNotesDurableObject extends DurableObject {
                 content = this.reconstructVersion(branch.head_version_id, noteId);
             }
 
-            // Update note content to branch HEAD
-            if (content) {
-                this.sql.exec("UPDATE notes SET content = ?, updated_at = unixepoch() WHERE id = ?", content, noteId);
-            }
-
-            // Evict Yjs doc so editor reloads with branch content
-            const doc = this.docs.get(noteId);
-            if (doc) {
-                this.docs.delete(noteId);
-                const timer = this.saveTimers.get(noteId);
-                if (timer) { clearTimeout(timer); this.saveTimers.delete(noteId); }
-            }
+            this.sql.exec(
+                "UPDATE notes SET content = ?, yjs_state = NULL, updated_at = unixepoch() WHERE id = ?",
+                content, noteId
+            );
+            this.resetNoteSync(noteId);
 
             return Response.json({ branch: branch.name, content });
         }
@@ -482,6 +497,34 @@ export class UserNotesDurableObject extends DurableObject {
 
             this.sql.exec("DELETE FROM note_branches WHERE id = ?", branchId);
             return Response.json({ ok: true });
+        }
+
+        // Merge: apply source branch content into current branch
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/branches\/merge$/)) {
+            const noteId = path.split("/")[2];
+            const { source_branch_id } = (await request.json()) as { source_branch_id: string };
+            const source = this.sql.exec(
+                "SELECT id, name, head_version_id FROM note_branches WHERE id = ? AND note_id = ?", source_branch_id, noteId
+            ).toArray()[0] as any;
+            if (!source) return new Response("Source branch not found", { status: 404 });
+            if (!source.head_version_id) return new Response("Source branch has no versions", { status: 400 });
+
+            const current = this.getCurrentBranch(noteId);
+            if (current.id === source.id) return new Response("Cannot merge branch into itself", { status: 400 });
+
+            const sourceContent = this.reconstructVersion(source.head_version_id, noteId);
+
+            // Create a merge version on the current branch
+            this.createVersion(noteId, `Merge ${source.name}`, sourceContent, "merge");
+
+            this.sql.exec(
+                "UPDATE notes SET content = ?, yjs_state = NULL, updated_at = unixepoch() WHERE id = ?",
+                sourceContent, noteId
+            );
+            this.resetNoteSync(noteId);
+
+            const note = this.getNote(noteId);
+            return Response.json({ ok: true, note, source_branch: source.name });
         }
 
         // --- Tree (full graph for visualization) ---
@@ -549,23 +592,14 @@ export class UserNotesDurableObject extends DurableObject {
             ).toArray()[0] as any)?.title || "Untitled";
 
             this.sql.exec(
-                "UPDATE notes SET title = ?, content = ?, updated_at = unixepoch() WHERE id = ?",
+                "UPDATE notes SET title = ?, content = ?, yjs_state = NULL, updated_at = unixepoch() WHERE id = ?",
                 restoredTitle, restoredContent, noteId
             );
 
-            // Create a new version for the restore itself
             this.createVersion(noteId, restoredTitle, restoredContent, "restore");
-
-            // Evict cached Yjs doc so collaborators get fresh content
-            const doc = this.docs.get(noteId);
-            if (doc) {
-                this.docs.delete(noteId);
-                const timer = this.saveTimers.get(noteId);
-                if (timer) { clearTimeout(timer); this.saveTimers.delete(noteId); }
-            }
+            this.resetNoteSync(noteId);
 
             const note = this.getNote(noteId);
-            this.broadcastJson({ type: "note-restored", note });
             return Response.json(note);
         }
 

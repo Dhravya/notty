@@ -136,6 +136,7 @@ function MomentCluster({ items, getUrl, onOpen, onDelete, onTogglePublish, isDar
                     return (
                         <button
                             key={item.id}
+                            data-media-id={item.id}
                             onClick={() => onOpen(item.id)}
                             className="shrink-0 w-24 h-24 sm:w-32 sm:h-32 rounded-xl overflow-hidden relative group/thumb"
                         >
@@ -228,7 +229,7 @@ function MediaTimelineEntry({ item, url, isSelected, flatIdx, onSelect, onDelete
     const typeLabel = item.type === "image" ? "Image" : item.type === "video" ? "Video" : "PDF";
 
     return (
-        <div className="block group" data-note-index={flatIdx} onClick={() => onSelect?.(flatIdx)}>
+        <div className="block group" data-note-index={flatIdx} data-media-id={item.id} onClick={() => onSelect?.(flatIdx)}>
             <div
                 className={`rounded-l-md rounded-r-2xl overflow-hidden transition-all duration-150 hover:bg-[var(--color-sidebar-active)] ${
                     isSelected ? "ring-[3px] ring-[var(--color-accent)] bg-[var(--color-sidebar-active)] shadow-[0_0_0_1px_var(--color-accent),0_4px_20px_rgba(42,161,152,0.25)]" : ""

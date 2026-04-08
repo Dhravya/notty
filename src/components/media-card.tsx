@@ -28,7 +28,7 @@ export function MediaCard({
     const isPublished = !!item.published;
 
     return (
-        <div className="block group">
+        <div className="block group" data-media-id={item.id}>
             <div
                 className="rounded-l-md rounded-r-2xl overflow-hidden hover:-translate-y-1 hover:shadow-xl transition-all duration-200 min-h-[180px] flex flex-col shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                 style={{ backgroundColor: color.bg }}

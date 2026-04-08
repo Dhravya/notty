@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate } from "react-router";
 import { LayoutGrid, List, Pencil, Image, Plus, Camera, FileUp } from "lucide-react";
 import { Drawer } from "vaul";
@@ -141,11 +142,41 @@ export function HomePage() {
 
     const openMediaFromId = useCallback((id: string) => {
         const idx = mediaItems.findIndex(m => m.id === id);
-        if (idx >= 0) {
-            setViewerIndex(idx);
-            setViewerOpen(true);
-        }
+        if (idx < 0) return;
+
+        // Pause any playing video on the card
+        const cardEl = document.querySelector(`[data-media-id="${id}"]`);
+        const cardVideo = cardEl?.querySelector("video") as HTMLVideoElement | null;
+        if (cardVideo) cardVideo.pause();
+
+        const thumb = cardEl?.querySelector("img, video") as HTMLElement | null;
+        if (thumb) thumb.style.viewTransitionName = "media-hero";
+
+        const open = () => { setViewerIndex(idx); setViewerOpen(true); };
+
+        if (!document.startViewTransition) { open(); return; }
+        document.startViewTransition(() => {
+            flushSync(open);
+            if (thumb) thumb.style.viewTransitionName = "";
+        });
     }, [mediaItems]);
+
+    const closeViewer = useCallback(() => {
+        const item = mediaItems[viewerIndex];
+        if (!item) { setViewerOpen(false); return; }
+
+        if (!document.startViewTransition) { setViewerOpen(false); return; }
+
+        const transition = document.startViewTransition(() => {
+            flushSync(() => setViewerOpen(false));
+            const thumb = document.querySelector(`[data-media-id="${item.id}"] img, [data-media-id="${item.id}"] video`) as HTMLElement | null;
+            if (thumb) thumb.style.viewTransitionName = "media-hero";
+        });
+        transition.finished.then(() => {
+            const thumb = document.querySelector(`[data-media-id="${item.id}"] img, [data-media-id="${item.id}"] video`) as HTMLElement | null;
+            if (thumb) thumb.style.viewTransitionName = "";
+        });
+    }, [mediaItems, viewerIndex]);
 
     useHotkeys([
         { key: "n", handler: createAndNavigate },
@@ -402,7 +433,7 @@ export function HomePage() {
                     items={mediaItems}
                     initialIndex={viewerIndex}
                     getMediaUrl={getMediaUrl}
-                    onClose={() => setViewerOpen(false)}
+                    onClose={closeViewer}
                     onUpdateCaption={updateCaption}
                     onTogglePublish={publishMedia}
                 />

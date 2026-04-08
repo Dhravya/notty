@@ -5,6 +5,7 @@ import { AdapterProvider } from "@/context/adapter-context";
 import { AuthProvider } from "@/context/auth-context";
 import { NotesProvider } from "@/context/notes-context";
 import { FoldersProvider } from "@/context/folders-context";
+import { MediaProvider } from "@/context/media-context";
 import type { NottyAdapter } from "@/lib/adapter";
 import { HomePage } from "./pages/home";
 import { NotePage } from "./pages/note";
@@ -38,6 +39,7 @@ getAdapter().then((adapter) => {
                     <AuthProvider>
                         <NotesProvider>
                             <FoldersProvider>
+                            <MediaProvider>
                                 <Routes>
                                     <Route path="/" element={<HomePage />} />
                                     <Route path="/note/:id" element={<NotePage />} />
@@ -45,6 +47,7 @@ getAdapter().then((adapter) => {
                                     <Route path="/shared/:token" element={<SharedResolvePage />} />
                                     <Route path="/settings/public" element={<PublicSettingsPage />} />
                                 </Routes>
+                            </MediaProvider>
                             </FoldersProvider>
                         </NotesProvider>
                     </AuthProvider>

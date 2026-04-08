@@ -1,6 +1,7 @@
 interface Env {
     AUTH_DO: DurableObjectNamespace;
     USER_NOTES_DO: DurableObjectNamespace;
+    MEDIA_BUCKET: R2Bucket;
     BETTER_AUTH_SECRET: string;
     BETTER_AUTH_URL: string;
     GOOGLE_CLIENT_ID?: string;

@@ -1,5 +1,5 @@
 import type * as Y from "yjs";
-import type { NottyAdapter, Note, User, Folder, Share, SharedNote, Profile } from "./adapter";
+import type { NottyAdapter, Note, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
 import { NottyProvider } from "./yjs-provider";
 import { authClient } from "./auth-client";
 
@@ -150,6 +150,43 @@ export class WebAdapter implements NottyAdapter {
         });
         await assertOk(res, "Failed to verify lock");
         return res.json();
+    }
+
+    // Media
+    async getMedia(): Promise<MediaItem[]> {
+        const res = await fetch("/api/media");
+        await assertOk(res, "Failed to fetch media");
+        return res.json();
+    }
+
+    async uploadMedia(file: File, dimensions?: { width: number; height: number }): Promise<MediaItem> {
+        const form = new FormData();
+        form.append("file", file);
+        if (dimensions) {
+            form.append("width", String(dimensions.width));
+            form.append("height", String(dimensions.height));
+        }
+        const res = await fetch("/api/media", { method: "POST", body: form });
+        await assertOk(res, "Failed to upload media");
+        return res.json();
+    }
+
+    async deleteMedia(id: string): Promise<void> {
+        const res = await fetch(`/api/media/${id}`, { method: "DELETE" });
+        await assertOk(res, "Failed to delete media");
+    }
+
+    async publishMedia(id: string, published: boolean): Promise<void> {
+        const res = await fetch(`/api/media/${id}/publish`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ published }),
+        });
+        await assertOk(res, "Failed to publish media");
+    }
+
+    getMediaUrl(id: string): string {
+        return `/api/media/${id}/file`;
     }
 
     // Publishing

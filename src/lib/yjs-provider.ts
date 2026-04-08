@@ -126,10 +126,11 @@ export class NottyProvider {
             }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
             this.connected = false;
-            if (!this.destroyed) {
-                // Exponential backoff: 2s, 4s, 8s, max 30s
+            // Don't reconnect if destroyed or if server closed for content-reset
+            // (checkout/restore/merge — editor will remount with fresh state)
+            if (!this.destroyed && event.code !== 4000) {
                 this.reconnectDelay = Math.min((this.reconnectDelay || 1000) * 2, 30000);
                 setTimeout(() => this.connect(), this.reconnectDelay);
             }

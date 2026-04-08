@@ -295,6 +295,16 @@ export class WebAdapter implements NottyAdapter {
         await assertOk(res, "Failed to delete branch");
     }
 
+    async mergeBranch(noteId: string, sourceBranchId: string): Promise<{ ok: boolean; source_branch: string }> {
+        const res = await fetch(`/api/notes/${noteId}/branches/merge`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source_branch_id: sourceBranchId }),
+        });
+        await assertOk(res, "Failed to merge branch");
+        return res.json();
+    }
+
     async getNoteTree(noteId: string): Promise<NoteTree> {
         const res = await fetch(`/api/notes/${noteId}/tree`);
         await assertOk(res, "Failed to fetch tree");

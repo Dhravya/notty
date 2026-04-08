@@ -140,6 +140,7 @@ export interface NottyAdapter {
     createBranch(noteId: string, name: string): Promise<NoteBranch>;
     checkoutBranch(noteId: string, branchId: string): Promise<{ branch: string; content: string }>;
     deleteBranch(noteId: string, branchId: string): Promise<void>;
+    mergeBranch(noteId: string, sourceBranchId: string): Promise<{ ok: boolean; source_branch: string }>;
     getNoteTree(noteId: string): Promise<NoteTree>;
 
     // Media

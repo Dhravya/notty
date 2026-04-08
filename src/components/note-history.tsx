@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { History, RotateCcw, X, Eye, GitBranch, Plus, Trash2 } from "lucide-react";
+import { History, RotateCcw, X, Eye, GitBranch, Plus, Trash2, GitMerge } from "lucide-react";
 import { useAdapter } from "@/context/adapter-context";
 import { GitTree } from "./git-tree";
 import type { NoteVersion, NoteBranch, NoteTree } from "@/lib/adapter";
@@ -51,11 +51,11 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
     return result;
 }
 
-export function NoteHistory({ noteId, currentContent, onRestore, onBranchSwitch, onClose }: {
+export function NoteHistory({ noteId, currentContent, saveGuardRef, onContentReset, onClose }: {
     noteId: string;
     currentContent: string;
-    onRestore: () => void;
-    onBranchSwitch: (branchName: string) => void;
+    saveGuardRef: React.MutableRefObject<boolean>;
+    onContentReset: () => Promise<void>;
     onClose: () => void;
 }) {
     const adapter = useAdapter();
@@ -89,9 +89,13 @@ export function NoteHistory({ noteId, currentContent, onRestore, onBranchSwitch,
         if (!selected) return;
         setRestoring(true);
         try {
+            saveGuardRef.current = true; // block saves before API call
             await adapter.restoreVersion(noteId, selected.id);
-            onRestore();
-        } catch (e) { console.error("Restore failed:", e); }
+            await onContentReset();
+        } catch (e) {
+            saveGuardRef.current = false; // re-enable on failure
+            console.error("Restore failed:", e);
+        }
         setRestoring(false);
     };
 
@@ -109,9 +113,13 @@ export function NoteHistory({ noteId, currentContent, onRestore, onBranchSwitch,
 
     const handleCheckout = async (branch: NoteBranch) => {
         try {
-            const result = await adapter.checkoutBranch(noteId, branch.id);
-            onBranchSwitch(result.branch);
-        } catch (e) { console.error("Checkout failed:", e); }
+            saveGuardRef.current = true;
+            await adapter.checkoutBranch(noteId, branch.id);
+            await onContentReset();
+        } catch (e) {
+            saveGuardRef.current = false;
+            console.error("Checkout failed:", e);
+        }
     };
 
     const handleDeleteBranch = async (branch: NoteBranch) => {
@@ -119,6 +127,17 @@ export function NoteHistory({ noteId, currentContent, onRestore, onBranchSwitch,
             await adapter.deleteBranch(noteId, branch.id);
             loadTree();
         } catch (e) { console.error("Delete branch failed:", e); }
+    };
+
+    const handleMerge = async (branch: NoteBranch) => {
+        try {
+            saveGuardRef.current = true;
+            await adapter.mergeBranch(noteId, branch.id);
+            await onContentReset();
+        } catch (e) {
+            saveGuardRef.current = false;
+            console.error("Merge failed:", e);
+        }
     };
 
     const branches = tree?.branches || [];
@@ -197,30 +216,39 @@ export function NoteHistory({ noteId, currentContent, onRestore, onBranchSwitch,
                             {branches.map((branch) => (
                                 <div
                                     key={branch.id}
-                                    className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs group ${
+                                    className={`flex items-center justify-between px-2 py-1.5 rounded-md text-xs group transition-colors ${
                                         branch.is_current
-                                            ? "bg-[var(--color-accent)]/5 text-[var(--color-accent)]"
-                                            : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)]"
+                                            ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
+                                            : "text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] cursor-pointer"
                                     }`}
+                                    onClick={() => !branch.is_current && handleCheckout(branch)}
                                 >
-                                    <button
-                                        onClick={() => !branch.is_current && handleCheckout(branch)}
-                                        className="flex items-center gap-1.5 font-mono truncate"
-                                        disabled={!!branch.is_current}
-                                    >
-                                        <GitBranch size={11} />
-                                        {branch.name}
+                                    <div className="flex items-center gap-1.5 font-mono truncate min-w-0">
+                                        <GitBranch size={11} className="shrink-0" />
+                                        <span className="truncate">{branch.name}</span>
                                         {branch.is_current === 1 && (
-                                            <span className="text-[8px] font-sans opacity-60">HEAD</span>
+                                            <span className="text-[8px] font-sans opacity-60 shrink-0">HEAD</span>
                                         )}
-                                    </button>
-                                    {!branch.is_default && !branch.is_current && (
-                                        <button
-                                            onClick={() => handleDeleteBranch(branch)}
-                                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-red-500 transition-all"
-                                        >
-                                            <Trash2 size={10} />
-                                        </button>
+                                    </div>
+                                    {!branch.is_current && (
+                                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleMerge(branch); }}
+                                                className="p-0.5 rounded hover:text-[var(--color-accent)] transition-colors"
+                                                title={`Merge ${branch.name} into ${currentBranch?.name || "current"}`}
+                                            >
+                                                <GitMerge size={10} />
+                                            </button>
+                                            {!branch.is_default && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteBranch(branch); }}
+                                                    className="p-0.5 rounded hover:text-red-500 transition-colors"
+                                                    title="Delete branch"
+                                                >
+                                                    <Trash2 size={10} />
+                                                </button>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             ))}

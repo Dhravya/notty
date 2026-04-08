@@ -350,7 +350,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                                         value={item.title}
                                         onCommand={(val) => item.command?.(val)}
                                         key={item.title}
-                                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-border-warm)] cursor-pointer transition-colors"
+                                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-[var(--color-border-warm)] data-[selected=true]:bg-[var(--color-border-warm)] cursor-pointer transition-colors"
                                     >
                                         <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--color-border-warm)] bg-[var(--color-paper)]">
                                             {item.icon}

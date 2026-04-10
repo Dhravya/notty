@@ -323,7 +323,6 @@ export class DesktopAdapter implements NottyAdapter {
 
     createProvider(noteId: string, doc: Y.Doc): NottyProvider {
         // Desktop: skip IndexedDB Yjs persistence (SQLite is the persistence layer).
-        // This prevents stale IndexedDB Yjs ops from merging with server state.
         const provider = new NottyProvider(noteId, doc, { connect: false, skipPersistence: true });
         // When cloud is available, connect Yjs WebSocket for real-time sync
         detectCloud().then((cloud) => {

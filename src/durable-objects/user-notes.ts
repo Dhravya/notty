@@ -382,7 +382,7 @@ export class UserNotesDurableObject extends DurableObject {
             const existing = this.getNote(id);
 
             if (existing) {
-                const hasActiveYjs = this.docs.has(id);
+                const hasActiveYjs = this.ctx.getWebSockets(id).length > 0;
                 if (hasActiveYjs) {
                     // Yjs WebSocket is the source of truth — only update metadata columns
                     this.sql.exec(

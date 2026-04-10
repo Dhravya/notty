@@ -69,7 +69,7 @@ export class NottyProvider {
     }
 
     connect() {
-        if (this.destroyed || this.connected) return;
+        if (this.destroyed || this.connected || this.ws) return;
         this.offlineOnly = false;
         let wsUrl: string;
         if (this.serverUrl) {
@@ -134,9 +134,8 @@ export class NottyProvider {
         };
 
         ws.onclose = (event) => {
+            this.ws = null;
             this.connected = false;
-            // Don't reconnect if destroyed or if server closed for content-reset
-            // (checkout/restore/merge — editor will remount with fresh state)
             if (!this.destroyed && event.code !== 4000) {
                 this.reconnectDelay = Math.min((this.reconnectDelay || 1000) * 2, 30000);
                 setTimeout(() => this.connect(), this.reconnectDelay);
@@ -144,6 +143,7 @@ export class NottyProvider {
         };
 
         ws.onerror = () => {
+            console.warn("[notty] WebSocket error for note", this.noteId);
             this.connected = false;
             ws.close();
         };

@@ -205,9 +205,9 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => clearInterval(interval);
     }, [saveNow]);
 
-    // Load: IndexedDB + HTTP in parallel. HTTP content is authoritative —
-    // it may be newer than IndexedDB (e.g. desktop edited via HTTP while
-    // web's Yjs state was stale). We bootstrap into the Yjs doc via TipTap.
+    // Load: IndexedDB + HTTP in parallel. Only bootstrap from HTTP when the
+    // Yjs doc is empty — setContent on a non-empty Collaboration doc creates
+    // independent Yjs ops that merge/duplicate with existing server state.
     const bootstrapRef = useRef<JSONContent | null>(null);
     useEffect(() => {
         let cancelled = false;
@@ -225,21 +225,25 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             return () => { cancelled = true; };
         }
 
-        // Fetch HTTP content in parallel with IndexedDB
+        // Fetch HTTP content in parallel with IndexedDB (no added latency)
         const httpContent = Promise.race([
-            adapter.getNote(noteId).catch(() => null),
-            new Promise((r) => setTimeout(() => r(null), 500)),
+            adapter.getNote(noteId).catch((e) => { console.warn("[notty] HTTP bootstrap fetch failed:", e); return null; }),
+            new Promise((r) => setTimeout(() => r(null), 1000)),
         ]);
 
         Promise.all([waitForPersistence, httpContent]).then(([, data]: [any, any]) => {
             if (cancelled) return;
-            if (data?.content) {
+            const hasYjsContent = ydoc.getXmlFragment("default").length > 1;
+            // Only bootstrap when Yjs doc is empty to prevent CRDT duplication
+            if (!hasYjsContent && data?.content) {
                 try {
                     const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
                     if (parsed?.type === "doc" && parsed.content?.length) {
                         bootstrapRef.current = parsed;
                     }
-                } catch {}
+                } catch (e) {
+                    console.warn("[notty] Failed to parse bootstrap content:", e);
+                }
             }
             setReady(true);
         });
@@ -384,7 +388,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                     }}
                     onCreate={({ editor }) => {
                         editorRef.current = editor;
-                        if (bootstrapRef.current) {
+                        if (bootstrapRef.current && !editor.getText().trim()) {
                             editor.commands.setContent(bootstrapRef.current);
                             bootstrapRef.current = null;
                         }
@@ -450,7 +454,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                         <span className="hidden group-hover:inline">{wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars · {Math.max(1, Math.ceil(wordCount / 250))}p</span>
                     </span>
                     <span className="pointer-events-auto">
-                        <SaveIndicator saveState={saveState} />
+                        <SaveIndicator saveState={saveState} cloudConnected={provider.connected} />
                     </span>
                 </div>
             )}

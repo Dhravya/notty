@@ -24,12 +24,38 @@ import { SaveIndicator } from "./sync-status";
 import * as Y from "yjs";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import type { Awareness } from "y-protocols/awareness";
 import { NottyProvider } from "@/lib/yjs-provider";
 import { useNotes } from "@/context/notes-context";
 import { useAdapter } from "@/context/adapter-context";
 import { useAuth } from "@/context/auth-context";
 import { extensions as baseExtensions, suggestionItems } from "./editor-extensions";
 import { hashStr } from "./note-card";
+
+type Collaborator = { name: string; color: string; id: string };
+
+function useCollaborators(awareness: Awareness, localClientId: number) {
+    const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+    useEffect(() => {
+        const update = () => {
+            const others: Collaborator[] = [];
+            awareness.getStates().forEach((state, clientId) => {
+                if (clientId !== localClientId && state.user) {
+                    others.push(state.user as Collaborator);
+                }
+            });
+            setCollaborators(others);
+        };
+        awareness.on("change", update);
+        update();
+        return () => awareness.off("change", update);
+    }, [awareness, localClientId]);
+    return collaborators;
+}
+
+function dicebearUrl(seed: string) {
+    return `https://api.dicebear.com/9.x/bottts-neutral/svg?seed=${encodeURIComponent(seed)}`;
+}
 
 const CURSOR_COLORS = [
     "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899",
@@ -253,6 +279,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             user: {
                 name: user?.name || "Anonymous",
                 color: CURSOR_COLORS[hashStr(user?.id || "anon") % CURSOR_COLORS.length],
+                id: user?.id || "anon",
             },
             render: (user) => {
                 const cursor = document.createElement("span");
@@ -269,6 +296,8 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         }),
     ], [ydoc, provider]);
 
+    const collaborators = useCollaborators(provider.awareness, ydoc.clientID);
+
     if (!ready) {
         return (
             <div className="flex items-center justify-center min-h-[500px] text-[var(--color-ink-muted)] text-sm">
@@ -279,6 +308,28 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
 
     return (
         <div className="relative min-h-[500px]" data-font={font}>
+            {/* Collaborator avatars */}
+            {collaborators.length > 0 && (
+                <div className="absolute top-5 right-6 z-10 flex items-center -space-x-2">
+                    {collaborators.map((c) => (
+                        <div
+                            key={c.id}
+                            className="relative group"
+                        >
+                            <img
+                                src={dicebearUrl(c.id)}
+                                alt={c.name}
+                                className="w-7 h-7 rounded-full border-2 bg-[var(--color-paper)]"
+                                style={{ borderColor: c.color }}
+                            />
+                            <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap bg-[var(--color-ink)] text-[var(--color-paper)] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                {c.name}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Toolbar — font + lines toggle (hidden for read-only) */}
             {!readOnly && <div className="absolute top-5 left-6 z-10 flex items-center gap-1.5">
                 <button

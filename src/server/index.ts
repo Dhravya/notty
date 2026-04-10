@@ -791,6 +791,35 @@ app.get("/api/public/:userId/profile", async (c) => {
     return new Response(res.body, { status: res.status, headers: res.headers });
 });
 
+// --- Shared note pages with OG tags (for crawlers hitting /shared/:token directly) ---
+app.get("/shared/:token", async (c) => {
+    const token = c.req.param("token");
+    const authStub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
+    const res = await authStub.fetch(new Request(`https://do/internal/shares/by-token?token=${encodeURIComponent(token)}`));
+
+    // Fetch the base index.html from assets
+    const url = new URL(c.req.url);
+    const indexRes = await c.env.ASSETS.fetch(new Request(`${url.origin}/index.html`));
+    let html = await indexRes.text();
+
+    if (res.ok) {
+        const { noteId, ownerId } = await res.json() as any;
+        const ownerStub = c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(ownerId));
+        const noteRes = await ownerStub.fetch(new Request(`https://do/notes/${noteId}/meta`));
+        const title = noteRes.ok ? ((await noteRes.json()) as any).title || "Untitled" : "Shared Note";
+        const ogImageUrl = `${url.origin}/api/shared/${token}/og-image.png`;
+
+        // Replace static OG tags with note-specific ones
+        html = html
+            .replace(/<meta property="og:title"[^>]*>/, `<meta property="og:title" content="${escapeAttr(title)}">`)
+            .replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="Shared via Notty">`)
+            .replace(/<meta property="og:image"[^>]*>/, `<meta property="og:image" content="${ogImageUrl}">\n<meta property="og:image:width" content="1200">\n<meta property="og:image:height" content="630">\n<meta name="twitter:card" content="summary_large_image">\n<meta name="twitter:title" content="${escapeAttr(title)}">\n<meta name="twitter:image" content="${ogImageUrl}">`)
+            .replace(/<title>[^<]*<\/title>/, `<title>${escapeAttr(title)} — Notty</title>`);
+    }
+
+    return c.html(html);
+});
+
 // --- Static assets + SPA fallback ---
 app.all("*", async (c) => {
     const url = new URL(c.req.url);

@@ -212,8 +212,11 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     useEffect(() => {
         let cancelled = false;
 
+        const persistenceReady = provider.persistence
+            ? provider.persistence.whenSynced
+            : Promise.resolve();
         Promise.race([
-            provider.persistence.whenSynced,
+            persistenceReady,
             new Promise((r) => setTimeout(r, 150)),
         ]).then(() => {
             if (cancelled) return;
@@ -221,6 +224,13 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             const hasYjsContent = ydoc.getXmlFragment("default").length > 1;
 
             if (hasYjsContent) {
+                setReady(true);
+                return;
+            }
+
+            // Shared notes get content from WebSocket sync — skip HTTP bootstrap
+            // to avoid duplicate content (HTTP + Yjs sync create independent ops)
+            if (shareToken) {
                 setReady(true);
                 return;
             }

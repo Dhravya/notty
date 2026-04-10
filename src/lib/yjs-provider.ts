@@ -11,7 +11,7 @@ const MSG_AWARENESS = 1;
 export class NottyProvider {
     doc: Y.Doc;
     awareness: awarenessProtocol.Awareness;
-    persistence: IndexeddbPersistence;
+    persistence: IndexeddbPersistence | null;
     private ws: WebSocket | null = null;
     private connected = false;
     private destroyed = false;
@@ -32,8 +32,10 @@ export class NottyProvider {
         this.offlineOnly = options?.connect === false;
         this.shareToken = options?.shareToken;
 
-        // Offline persistence — loads cached doc from IndexedDB immediately
-        this.persistence = new IndexeddbPersistence(`notty-${noteId}`, doc);
+        // Offline persistence — skip for shared notes (no offline use, avoids stale duplicates)
+        this.persistence = options?.shareToken
+            ? null
+            : new IndexeddbPersistence(`notty-${noteId}`, doc);
 
         this.doc.on("update", (update: Uint8Array, origin: any) => {
             if (origin === this) return;
@@ -159,7 +161,7 @@ export class NottyProvider {
     destroy() {
         this.destroyed = true;
         this.awareness.destroy();
-        this.persistence.destroy();
+        this.persistence?.destroy();
         this.ws?.close();
         this.ws = null;
     }

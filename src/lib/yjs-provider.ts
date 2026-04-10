@@ -64,7 +64,8 @@ export class NottyProvider {
     }
 
     connect() {
-        if (this.destroyed || this.offlineOnly) return;
+        if (this.destroyed) return;
+        this.offlineOnly = false;
         let wsUrl: string;
         if (this.serverUrl) {
             const proto = this.serverUrl.startsWith("https") ? "wss:" : "ws:";

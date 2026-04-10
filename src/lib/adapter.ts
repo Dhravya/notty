@@ -110,7 +110,7 @@ export interface NottyAdapter {
 
     // Notes
     getNotes(): Promise<Note[]>;
-    getNote(id: string): Promise<Note | null>;
+    getNote(id: string, shareToken?: string): Promise<Note | null>;
     getNoteMeta(id: string, shareToken?: string): Promise<Partial<Note> | null>;
     saveNote(id: string, title: string, content: string, folderId?: string | null): void;
     deleteNote(id: string): Promise<void>;

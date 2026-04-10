@@ -98,9 +98,10 @@ export class WebAdapter implements NottyAdapter {
         }
     }
 
-    async getNote(id: string): Promise<Note | null> {
+    async getNote(id: string, shareToken?: string): Promise<Note | null> {
         try {
-            const res = await fetch(`/api/notes/${id}`);
+            const params = shareToken ? `?share=${encodeURIComponent(shareToken)}` : "";
+            const res = await fetch(`/api/notes/${id}${params}`);
             if (res.status === 404) return null;
             await assertOk(res, "Failed to fetch note");
             return res.json();

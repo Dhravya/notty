@@ -201,7 +201,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
 
             // Yjs doc is empty — try to bootstrap from HTTP
             Promise.race([
-                adapter.getNote(noteId).catch(() => null),
+                adapter.getNote(noteId, shareToken).catch(() => null),
                 new Promise((r) => setTimeout(() => r(null), 500)),
             ]).then((data: any) => {
                 if (cancelled) return;

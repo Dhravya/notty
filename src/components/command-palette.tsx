@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useNotes } from "@/context/notes-context";
 import { useFolders } from "@/context/folders-context";
+import { useAuth } from "@/context/auth-context";
 import { useHotkeys, isMac } from "@/lib/hotkeys";
 import { extractPreview } from "./note-card";
 import { toggleDarkMode } from "@/lib/dark-mode";
@@ -26,6 +27,8 @@ export function CommandPalette() {
     const navigate = useNavigate();
     const { notes } = useNotes();
     const { folders, selectFolder } = useFolders();
+    const { user, signOut } = useAuth();
+    const isAnonymous = user?.isAnonymous || !user?.email;
 
     const close = useCallback(() => { setOpen(false); setQuery(""); setSelected(0); }, []);
 
@@ -70,6 +73,10 @@ export function CommandPalette() {
             },
         });
 
+        if (!isAnonymous) {
+            items.push({ id: "sign-out", title: "Sign Out", section: "Actions", action: () => { signOut(); close(); } });
+        }
+
         // Folders
         items.push({ id: "folder-all", title: "All Notes", section: "Folders", action: () => { selectFolder(null); navigate("/"); close(); } });
         for (const f of folders) {
@@ -94,7 +101,7 @@ export function CommandPalette() {
         }
 
         return items;
-    }, [notes, folders, createNewNote, toggleDark, navigate, selectFolder, close]);
+    }, [notes, folders, createNewNote, toggleDark, navigate, selectFolder, close, isAnonymous, signOut]);
 
     const filtered = useMemo(() => {
         if (!query.trim()) return commands;

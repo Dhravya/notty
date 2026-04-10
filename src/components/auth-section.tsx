@@ -83,7 +83,7 @@ export function AuthSection() {
                     </div>
                     <button
                         onClick={signOut}
-                        className="text-[10px] px-2 py-1 rounded-md text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] transition-colors shrink-0"
+                        className="text-[11px] px-2.5 py-1 rounded-lg text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-sidebar-active)] transition-colors shrink-0"
                     >
                         Sign out
                     </button>

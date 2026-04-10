@@ -19,7 +19,7 @@ export function Sidebar() {
     const navigate = useNavigate();
     const tabNavigate = useTabNavigate();
     const location = useLocation();
-    const { folders, selectedFolderId, selectFolder, createFolder, deleteFolder, renameFolder } = useFolders();
+    const { folders, selectedFolderId, selectFolder, createFolder, deleteFolder, renameFolder, updateFolderColor } = useFolders();
     const { notes, trash } = useNotes();
     const adapter = useAdapter();
     const { user } = useAuth();
@@ -27,6 +27,7 @@ export function Sidebar() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState("");
     const [creatingFolder, setCreatingFolder] = useState<{ step: "name" | "color"; name: string } | null>(null);
+    const [colorPickerId, setColorPickerId] = useState<string | null>(null);
     const editRef = useRef<HTMLInputElement>(null);
     const createRef = useRef<HTMLInputElement>(null);
 
@@ -123,8 +124,9 @@ export function Sidebar() {
                             >
                                 <span className="flex items-center gap-2.5 min-w-0">
                                     <span
-                                        className="w-2 h-2 rounded-full shrink-0 ring-1 ring-black/5"
+                                        className="w-2 h-2 rounded-full shrink-0 ring-1 ring-black/5 hover:scale-150 transition-transform cursor-pointer"
                                         style={{ backgroundColor: folder.color }}
+                                        onClick={(e) => { e.stopPropagation(); setColorPickerId(colorPickerId === folder.id ? null : folder.id); }}
                                     />
                                     {editingId === folder.id ? (
                                         <input
@@ -164,6 +166,18 @@ export function Sidebar() {
                                     </button>
                                 </span>
                             </button>
+                            {colorPickerId === folder.id && (
+                                <div className="flex items-center gap-1.5 px-3 py-1.5">
+                                    {FOLDER_COLORS.map((c) => (
+                                        <button
+                                            key={c}
+                                            onClick={() => { updateFolderColor(folder.id, c); setColorPickerId(null); }}
+                                            className={`w-4 h-4 rounded-full border-2 transition-colors hover:scale-110 ${c === folder.color ? "border-[var(--color-ink)]" : "border-transparent hover:border-[var(--color-ink-muted)]"}`}
+                                            style={{ backgroundColor: c }}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

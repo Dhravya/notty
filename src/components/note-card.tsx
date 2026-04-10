@@ -86,6 +86,7 @@ export function NoteCard({
     const color = getNoteColor(note.id, isDark);
     const year = formatYear(note.created_at);
     const date = formatDate(note.updated_at);
+    const isLocal = note.sync_mode === "local";
 
     return (
         <Link
@@ -95,8 +96,8 @@ export function NoteCard({
             onClick={onOpen ? (e) => { e.preventDefault(); onOpen(note); } : undefined}
         >
             <div
-                className="rounded-l-md rounded-r-2xl overflow-hidden hover:-translate-y-1 hover:shadow-xl transition-all duration-200 min-h-[180px] flex flex-col shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-                style={{ backgroundColor: color.bg, viewTransitionName: `note-${note.id}` }}
+                className={`rounded-l-md rounded-r-2xl overflow-hidden hover:-translate-y-1 hover:shadow-xl transition-all duration-200 min-h-[180px] flex flex-col ${isLocal ? "border-2 border-dashed shadow-none" : "shadow-[0_1px_3px_rgba(0,0,0,0.06)]"}`}
+                style={{ backgroundColor: color.bg, viewTransitionName: `note-${note.id}`, ...(isLocal ? { borderColor: `${color.text}30` } : {}) }}
             >
                 <div className="px-4 pt-4 pb-1.5 flex items-center gap-2 flex-wrap">
                     {year && (
@@ -134,21 +135,15 @@ export function NoteCard({
                 ) : <div className="flex-1" />}
                 <div className="px-4 pb-3.5 pt-2 flex items-center justify-between mt-auto">
                     <div className="flex items-center gap-2">
-                        {note.sync_mode === "local" ? (
-                            <span className="flex items-center gap-1 text-[11px]" style={{ color: color.text, opacity: 0.35 }}>
+                        {isLocal && (
+                            <span className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md" style={{ backgroundColor: `${color.text}10`, color: color.text, opacity: 0.6 }}>
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                     <rect x="2" y="2" width="20" height="8" rx="2" /><rect x="2" y="14" width="20" height="8" rx="2" />
                                 </svg>
-                                Local
-                            </span>
-                        ) : (
-                            <span className="flex items-center gap-1 text-[11px]" style={{ color: color.text, opacity: 0.35 }}>
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-                                </svg>
+                                Local only
                             </span>
                         )}
-                        {date && <span className="text-[11px]" style={{ color: color.text, opacity: 0.3 }}>{date}</span>}
+                        {date && <span className="text-[11px]" style={{ color: color.text, opacity: 0.35 }}>{date}</span>}
                     </div>
                     <button
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(note.id); }}

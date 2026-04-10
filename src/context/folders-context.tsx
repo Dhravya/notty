@@ -12,6 +12,7 @@ type FoldersContextType = {
     deleteFolder: (id: string) => Promise<void>;
     renameFolder: (id: string, name: string) => Promise<void>;
     updateFolderDescription: (id: string, description: string) => Promise<void>;
+    updateFolderColor: (id: string, color: string) => Promise<void>;
 };
 
 const FoldersContext = createContext<FoldersContextType | null>(null);
@@ -73,11 +74,22 @@ export function FoldersProvider({ children }: { children: ReactNode }) {
         if (updated) await adapter.saveFolder(updated);
     }, [adapter]);
 
+    const updateFolderColor = useCallback(async (id: string, color: string) => {
+        let updated: Folder | undefined;
+        setFolders((prev) =>
+            prev.map((f) => {
+                if (f.id === id) { updated = { ...f, color, updated_at: Date.now() }; return updated; }
+                return f;
+            })
+        );
+        if (updated) await adapter.saveFolder(updated);
+    }, [adapter]);
+
     return (
         <FoldersContext.Provider value={{
             folders, selectedFolderId, loading,
             selectFolder: setSelectedFolderId,
-            createFolder, deleteFolder, renameFolder, updateFolderDescription,
+            createFolder, deleteFolder, renameFolder, updateFolderDescription, updateFolderColor,
         }}>
             {children}
         </FoldersContext.Provider>

@@ -19,8 +19,8 @@ export class NottyProvider {
     private pendingUpdates: Uint8Array[] = [];
     private serverUrl: string | null = null;
     private reconnectDelay = 1000;
-    private _syncResolve: (() => void) | null = null;
-    whenSynced: Promise<void>;
+    private syncResolve: (() => void) | null = null;
+    readonly whenSynced: Promise<void>;
 
     private shareToken: string | undefined;
     private authToken: string | undefined;
@@ -29,17 +29,17 @@ export class NottyProvider {
     constructor(
         private noteId: string,
         doc: Y.Doc,
-        options?: { connect?: boolean; shareToken?: string; token?: string }
+        options?: { connect?: boolean; shareToken?: string; token?: string; skipPersistence?: boolean }
     ) {
         this.doc = doc;
         this.awareness = new awarenessProtocol.Awareness(doc);
         this.offlineOnly = options?.connect === false;
         this.shareToken = options?.shareToken;
         this.authToken = options?.token;
-        this.whenSynced = new Promise((r) => { this._syncResolve = r; });
+        this.whenSynced = new Promise(resolve => { this.syncResolve = resolve; });
 
-        // Offline persistence — skip for shared notes (no offline use, avoids stale duplicates)
-        this.persistence = options?.shareToken
+        // Skip persistence for shared notes and desktop (which uses local SQLite)
+        this.persistence = (options?.shareToken || options?.skipPersistence)
             ? null
             : new IndexeddbPersistence(`notty-${noteId}`, doc);
 
@@ -134,7 +134,8 @@ export class NottyProvider {
                 // SyncStep2 (1) means the server sent us its state — initial sync is done
                 if (syncType === 1 && !this.synced) {
                     this.synced = true;
-                    this._syncResolve?.();
+                    this.syncResolve?.();
+                    this.syncResolve = null;
                 }
             } else if (msgType === MSG_AWARENESS) {
                 const update = decoding.readVarUint8Array(decoder);

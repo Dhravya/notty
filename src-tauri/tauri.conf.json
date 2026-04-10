@@ -19,7 +19,10 @@
     "app": {
         "windows": [
             {
-                "title": "Notty",
+                "title": "",
+                "titleBarStyle": "Overlay",
+                "hiddenTitle": true,
+                "transparent": true,
                 "width": 1000,
                 "height": 700,
                 "minWidth": 600,

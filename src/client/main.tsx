@@ -6,6 +6,7 @@ import { AuthProvider } from "@/context/auth-context";
 import { NotesProvider } from "@/context/notes-context";
 import { FoldersProvider } from "@/context/folders-context";
 import { MediaProvider } from "@/context/media-context";
+import { TabsProvider } from "@/context/tabs-context";
 import type { NottyAdapter } from "@/lib/adapter";
 import { HomePage } from "./pages/home";
 import { NotePage } from "./pages/note";
@@ -44,15 +45,17 @@ getAdapter().then((adapter) => {
                         <NotesProvider>
                             <FoldersProvider>
                                 <MediaProvider>
-                                    <Routes>
-                                        <Route path="/" element={<HomePage />} />
-                                        <Route path="/trash" element={<TrashPage />} />
-                                        <Route path="/note/:id" element={<NotePage />} />
-                                        <Route path="/auth/passkey" element={<AuthPasskeyPage />} />
-                                        <Route path="/shared/:token" element={<SharedResolvePage />} />
-                                        <Route path="/settings/public" element={<PublicSettingsPage />} />
-                                        <Route path="/quick-note" element={<Suspense><QuickNotePage /></Suspense>} />
-                                    </Routes>
+                                    <TabsProvider>
+                                        <Routes>
+                                            <Route path="/" element={<HomePage />} />
+                                            <Route path="/trash" element={<TrashPage />} />
+                                            <Route path="/note/:id" element={<NotePage />} />
+                                            <Route path="/auth/passkey" element={<AuthPasskeyPage />} />
+                                            <Route path="/shared/:token" element={<SharedResolvePage />} />
+                                            <Route path="/settings/public" element={<PublicSettingsPage />} />
+                                            <Route path="/quick-note" element={<Suspense><QuickNotePage /></Suspense>} />
+                                        </Routes>
+                                    </TabsProvider>
                                 </MediaProvider>
                             </FoldersProvider>
                         </NotesProvider>

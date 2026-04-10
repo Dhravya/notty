@@ -61,7 +61,7 @@ export function AuthSection() {
     const isAnonymous = user?.isAnonymous || !user?.email;
 
     useEffect(() => {
-        if (isAnonymous) return;
+        if (isAnonymous || isTauri) return;
         authClient.passkey.listUserPasskeys().then(({ data }) => {
             if (data && data.length > 0) setHasPasskey(true);
         });

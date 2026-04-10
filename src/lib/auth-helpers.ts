@@ -19,6 +19,9 @@ export async function handleDeepLinkToken(url: string) {
         const store = await load("settings.json");
         await store.set("sessionToken", data.sessionToken);
         await store.save();
+        // Reset cloud detection so the new token gets picked up
+        const { resetCloudDetection } = await import("@/lib/desktop-adapter");
+        resetCloudDetection();
     }
     window.location.reload();
 }

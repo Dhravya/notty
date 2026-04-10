@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router";
+import { useTabNavigate } from "@/context/tabs-context";
 import { LayoutGrid, List, Pencil, Image, Plus, Camera, FileUp } from "lucide-react";
 import { Drawer } from "vaul";
 import { AppLayout } from "@/components/app-layout";
@@ -46,6 +47,7 @@ function usePersistedView(): [ViewMode, (v: ViewMode) => void] {
 
 export function HomePage() {
     const navigate = useNavigate();
+    const tabNavigate = useTabNavigate();
     const { notes, loading, deleteNote, revalidate } = useNotes();
     const { folders, selectedFolderId, selectFolder, renameFolder, updateFolderDescription } = useFolders();
     const { media, uploadMedia, deleteMedia, publishMedia, updateCaption, getMediaUrl, revalidate: revalidateMedia } = useMedia();
@@ -132,8 +134,8 @@ export function HomePage() {
 
     const createAndNavigate = useCallback(() => {
         const id = crypto.randomUUID();
-        navigate(`/note/${id}${selectedFolderId ? `?folder=${selectedFolderId}` : ""}`, { viewTransition: true });
-    }, [navigate, selectedFolderId]);
+        tabNavigate(`/note/${id}${selectedFolderId ? `?folder=${selectedFolderId}` : ""}`, { title: "New Note" });
+    }, [tabNavigate, selectedFolderId]);
 
     useEffect(() => {
         if (selectedIndex < 0) return;
@@ -184,7 +186,7 @@ export function HomePage() {
         { key: "arrowdown", handler: () => setSelectedIndex((i) => Math.min(i + 1, totalItems - 1)) },
         { key: "k", handler: () => setSelectedIndex((i) => Math.max(i - 1, 0)) },
         { key: "arrowup", handler: () => setSelectedIndex((i) => Math.max(i - 1, 0)) },
-        { key: "enter", handler: () => { if (sorted[selectedIndex]) navigate(`/note/${sorted[selectedIndex].id}`, { viewTransition: true }); } },
+        { key: "enter", handler: () => { if (sorted[selectedIndex]) tabNavigate(`/note/${sorted[selectedIndex].id}`, { title: sorted[selectedIndex].title || "Untitled" }); } },
         { key: "x", handler: () => { if (sorted[selectedIndex]) { deleteNote(sorted[selectedIndex].id); setSelectedIndex((i) => Math.max(i - 1, 0)); } } },
         { key: "v", handler: () => setViewMode(viewMode === "grid" ? "timeline" : "grid") },
         { key: "s", handler: () => setSortMode((m) => m === "recent" ? "created" : "recent") },
@@ -354,7 +356,8 @@ export function HomePage() {
                                     }`} onClick={() => setSelectedIndex(i)}>
                                     {item.kind === "note" ? (
                                         <NoteCard note={item.data} onDelete={deleteNote} isDark={isDark}
-                                            folderName={folderNameMap.get(item.data.folder_id ?? "")} />
+                                            folderName={folderNameMap.get(item.data.folder_id ?? "")}
+                                            onOpen={(n) => tabNavigate(`/note/${n.id}`, { title: n.title || "Untitled" })} />
                                     ) : (
                                         <MediaCard item={item.data} mediaUrl={item.url}
                                             onDelete={deleteMedia} onTogglePublish={publishMedia}

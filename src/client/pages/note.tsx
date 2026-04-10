@@ -15,6 +15,8 @@ import { useAuth } from "@/context/auth-context";
 import { formatEntryDate } from "@/lib/date-utils";
 import { useHotkeys } from "@/lib/hotkeys";
 import { StorageBadge, OfflineBanner } from "@/components/sync-status";
+import { isTauri } from "@/lib/platform";
+import { useTabs } from "@/context/tabs-context";
 
 function NoteMenu({
     noteId,
@@ -150,6 +152,14 @@ export function NotePage() {
     const note = notes.find((n) => n.id === id);
     const effectiveFolderId = folderId || note?.folder_id || null;
 
+    // Update tab title when note title changes
+    const { updateTabTitle, activeTabId, closeTab } = useTabs();
+    useEffect(() => {
+        if (isTauri && activeTabId && note?.title) {
+            updateTabTitle(activeTabId, note.title);
+        }
+    }, [note?.title, activeTabId, updateTabTitle]);
+
     // Called AFTER the API call completes (guard already set by NoteHistory).
     // Cleans up stale state and remounts the editor.
     const handleContentReset = useCallback(async () => {
@@ -180,16 +190,17 @@ export function NotePage() {
         });
     }, [id, adapter, shareToken, authLoading, user]);
 
-    // Escape navigates back, preserving folder context
+    const handleBack = useCallback(() => {
+        if (effectiveFolderId) selectFolder(effectiveFolderId);
+        if (isTauri && activeTabId && activeTabId !== "home") {
+            closeTab(activeTabId);
+        } else {
+            navigate("/", { viewTransition: true });
+        }
+    }, [effectiveFolderId, selectFolder, activeTabId, closeTab, navigate]);
+
     useHotkeys([
-        {
-            key: "escape",
-            handler: () => {
-                if (effectiveFolderId) selectFolder(effectiveFolderId);
-                navigate("/", { viewTransition: true });
-            },
-            allowInInput: true,
-        },
+        { key: "escape", handler: handleBack, allowInInput: true },
     ]);
 
     // Auto-hide controls on desktop (hover: hover) only — touch devices always show
@@ -294,15 +305,18 @@ export function NotePage() {
     return (
         <div className="min-h-screen bg-[var(--color-paper)]" style={{ viewTransitionName: `note-${id}` }}>
             {/* Floating top bar */}
-            <div className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-3 sm:px-5 py-3 transition-opacity duration-500 ${showControls ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-                <Link
-                    to="/"
-                    viewTransition
+            <div
+                className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-3 sm:px-5 py-3 transition-opacity duration-500 ${showControls ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+                style={isTauri ? { paddingTop: 38 } : undefined}
+                {...(isTauri ? { "data-tauri-drag-region": true } : {})}
+            >
+                <button
+                    onClick={handleBack}
                     className="flex items-center gap-2 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--color-sidebar-active)]"
                 >
                     <ArrowLeft size={16} />
                     <span className="font-serif italic hidden sm:inline">notty</span>
-                </Link>
+                </button>
 
                 <div className="flex items-center gap-1.5 sm:gap-2 text-[var(--color-ink-muted)]">
                     {/* Date — desktop only */}

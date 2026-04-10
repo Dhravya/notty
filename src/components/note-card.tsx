@@ -73,10 +73,11 @@ function formatYear(ts: number): string {
 }
 
 export function NoteCard({
-    note, onDelete, folderName, isDark,
+    note, onDelete, onOpen, folderName, isDark,
 }: {
     note: Note;
     onDelete: (id: string) => void;
+    onOpen?: (note: Note) => void;
     folderName?: string;
     isDark?: boolean;
 }) {
@@ -87,7 +88,12 @@ export function NoteCard({
     const date = formatDate(note.updated_at);
 
     return (
-        <Link to={`/note/${note.id}`} viewTransition className="block group">
+        <Link
+            to={`/note/${note.id}`}
+            viewTransition
+            className="block group"
+            onClick={onOpen ? (e) => { e.preventDefault(); onOpen(note); } : undefined}
+        >
             <div
                 className="rounded-l-md rounded-r-2xl overflow-hidden hover:-translate-y-1 hover:shadow-xl transition-all duration-200 min-h-[180px] flex flex-col shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                 style={{ backgroundColor: color.bg, viewTransitionName: `note-${note.id}` }}

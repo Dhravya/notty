@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { useNotes } from "@/context/notes-context";
 import { useFolders } from "@/context/folders-context";
 import { useAuth } from "@/context/auth-context";
+import { useTabNavigate } from "@/context/tabs-context";
 import { useHotkeys, isMac } from "@/lib/hotkeys";
 import { extractPreview } from "./note-card";
 import { toggleDarkMode } from "@/lib/dark-mode";
@@ -25,6 +26,7 @@ export function CommandPalette() {
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
+    const tabNavigate = useTabNavigate();
     const { notes } = useNotes();
     const { folders, selectFolder } = useFolders();
     const { user, signOut } = useAuth();
@@ -43,9 +45,9 @@ export function CommandPalette() {
 
     const createNewNote = useCallback(() => {
         const id = crypto.randomUUID();
-        navigate(`/note/${id}`);
+        tabNavigate(`/note/${id}`, { title: "New Note" });
         close();
-    }, [navigate, close]);
+    }, [tabNavigate, close]);
 
     const toggleDark = useCallback(() => {
         toggleDarkMode();
@@ -96,12 +98,12 @@ export function CommandPalette() {
                 title: n.title || "Untitled",
                 subtitle: extractPreview(n.content).slice(0, 60),
                 section: "Notes",
-                action: () => { navigate(`/note/${n.id}`); close(); },
+                action: () => { tabNavigate(`/note/${n.id}`, { title: n.title || "Untitled" }); close(); },
             });
         }
 
         return items;
-    }, [notes, folders, createNewNote, toggleDark, navigate, selectFolder, close, isAnonymous, signOut]);
+    }, [notes, folders, createNewNote, toggleDark, navigate, tabNavigate, selectFolder, close, isAnonymous, signOut]);
 
     const filtered = useMemo(() => {
         if (!query.trim()) return commands;

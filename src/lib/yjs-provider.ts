@@ -14,8 +14,8 @@ export class NottyProvider {
     persistence: IndexeddbPersistence | null;
     private ws: WebSocket | null = null;
     connected = false;
-    synced = false;
     destroyed = false;
+    synced = false;
     private pendingUpdates: Uint8Array[] = [];
     private serverUrl: string | null = null;
     private reconnectDelay = 1000;
@@ -127,13 +127,14 @@ export class NottyProvider {
             if (msgType === MSG_SYNC) {
                 const encoder = encoding.createEncoder();
                 encoding.writeVarUint(encoder, MSG_SYNC);
-                syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
+                const syncType = syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
                 if (encoding.length(encoder) > 1) {
                     ws.send(encoding.toUint8Array(encoder));
                 }
-                if (this.syncResolve) {
+                // SyncStep2 (1) means the server sent us its state — initial sync is done
+                if (syncType === 1 && !this.synced) {
                     this.synced = true;
-                    this.syncResolve();
+                    this.syncResolve?.();
                     this.syncResolve = null;
                 }
             } else if (msgType === MSG_AWARENESS) {

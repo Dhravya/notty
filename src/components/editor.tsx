@@ -206,7 +206,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     }, [saveNow]);
 
     // Load content into the Yjs doc. Strategy varies by platform:
-    // - Web: IndexedDB + HTTP in parallel, bootstrap only when Yjs is empty
+    // - Web: IndexedDB + WS sync + HTTP in parallel, bootstrap only when Yjs is empty
     // - Desktop: wait for WebSocket sync from server, fall back to local if offline
     // - Shared notes: WebSocket only (skip HTTP to avoid duplicate ops)
     const bootstrapRef = useRef<JSONContent | null>(null);
@@ -265,7 +265,14 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             new Promise((r) => setTimeout(() => r(null), 1000)),
         ]);
 
-        Promise.all([waitForPersistence, httpContent]).then(([, data]: [any, any]) => {
+        // Wait for WebSocket sync too (with timeout) so we don't bootstrap
+        // content that's about to arrive via Yjs — that causes CRDT duplication
+        const wsSync = Promise.race([
+            provider.whenSynced,
+            new Promise((r) => setTimeout(r, 2000)),
+        ]);
+
+        Promise.all([waitForPersistence, httpContent, wsSync]).then(([, data]: [any, any, any]) => {
             if (cancelled) return;
             const hasYjsContent = ydoc.getXmlFragment("default").length > 1;
             if (!hasYjsContent && data?.content) {
@@ -284,10 +291,11 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => { cancelled = true; };
     }, [noteId, ydoc, provider, adapter]);
 
-    // Connect WS after auth (web only — desktop connects via adapter)
+    // Connect WS early so sync completes before bootstrap decision.
+    // Desktop connects via detectCloud() in the adapter instead.
     useEffect(() => {
-        if (user && ready && !isTauri) provider.connect();
-    }, [user, ready, provider]);
+        if (user && !isTauri) provider.connect();
+    }, [user, provider]);
 
     // Ref so unmount cleanup always calls the latest saveNow without dep churn
     const saveNowRef = useRef(saveNow);

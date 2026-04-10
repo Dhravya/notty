@@ -79,7 +79,7 @@ const FONT_STYLES: Record<FontChoice, React.CSSProperties> = {
     mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
 };
 
-export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGuardRef }: { noteId: string; shareToken?: string; readOnly?: boolean; folderId?: string | null; saveGuardRef?: React.MutableRefObject<boolean> }) {
+export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGuardRef, compact = false }: { noteId: string; shareToken?: string; readOnly?: boolean; folderId?: string | null; saveGuardRef?: React.MutableRefObject<boolean>; compact?: boolean }) {
     const { saveNote } = useNotes();
     const adapter = useAdapter();
     const { user } = useAuth();
@@ -215,10 +215,12 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         const persistenceReady = provider.persistence
             ? provider.persistence.whenSynced
             : Promise.resolve();
-        Promise.race([
-            persistenceReady,
-            new Promise((r) => setTimeout(r, 150)),
-        ]).then(() => {
+        // In compact mode (quick notes), always wait for IndexedDB — no timeout race.
+        // In normal mode, race with 150ms to avoid blocking on slow persistence.
+        const waitForPersistence = compact
+            ? persistenceReady
+            : Promise.race([persistenceReady, new Promise((r) => setTimeout(r, 150))]);
+        waitForPersistence.then(() => {
             if (cancelled) return;
 
             const hasYjsContent = ydoc.getXmlFragment("default").length > 1;
@@ -277,8 +279,17 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             // still save — catches the case where escape fires before first debounce
             if (editorRef.current) saveNowRef.current(editorRef.current);
         }
-        provider.destroy();
-        ydoc.destroy();
+        // Wait for IndexedDB to finish writing before destroying the doc,
+        // so cycling back to this note loads the correct content.
+        if (provider.persistence) {
+            provider.persistence.whenSynced.then(() => {
+                provider.destroy();
+                ydoc.destroy();
+            });
+        } else {
+            provider.destroy();
+            ydoc.destroy();
+        }
     }, [provider, ydoc, debouncedSave]);
 
     const collabExtensions = useMemo(() => [
@@ -317,7 +328,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     }
 
     return (
-        <div className="relative min-h-[500px]" data-font={font}>
+        <div className={`relative ${compact ? "min-h-[200px]" : "min-h-[500px]"}`} data-font={font}>
             {/* Collaborator avatars */}
             {collaborators.length > 0 && (
                 <div className="absolute top-5 right-6 z-10 flex items-center -space-x-2">
@@ -340,8 +351,8 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                 </div>
             )}
 
-            {/* Toolbar — font + lines toggle (hidden for read-only) */}
-            {!readOnly && <div className="absolute top-5 left-6 z-10 flex items-center gap-1.5">
+            {/* Toolbar — font + lines toggle (hidden for read-only and compact) */}
+            {!readOnly && !compact && <div className="absolute top-5 left-6 z-10 flex items-center gap-1.5">
                 <button
                     onClick={cycleFont}
                     className="text-xs px-2.5 py-1 rounded-lg border border-[var(--color-border-warm)] bg-[var(--color-paper)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors"
@@ -368,13 +379,13 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                 <EditorContent
                     extensions={collabExtensions}
                     editable={!readOnly}
-                    className={`px-10 py-14 sm:px-16 sm:py-20 ${showLines ? "editor-ruled-bg" : ""} ${readOnly ? "cursor-default" : ""}`}
+                    className={`${compact ? "px-4 py-3" : "px-10 py-14 sm:px-16 sm:py-20"} ${showLines ? "editor-ruled-bg" : ""} ${readOnly ? "cursor-default" : ""}`}
                     editorProps={{
                         handleDOMEvents: {
                             keydown: (_view, event) => readOnly ? false : handleCommandNavigation(event),
                         },
                         attributes: {
-                            class: `focus:outline-none max-w-full min-h-[400px] ${readOnly ? "select-text" : ""}`,
+                            class: `focus:outline-none max-w-full ${compact ? "min-h-[180px]" : "min-h-[400px]"} ${readOnly ? "select-text" : ""}`,
                         },
                     }}
                     onUpdate={({ editor }) => {
@@ -438,8 +449,8 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                 </EditorContent>
             </EditorRoot>
 
-            {/* Status bar — bottom */}
-            {!readOnly && !shareToken && (
+            {/* Status bar — bottom (hidden in compact mode) */}
+            {!readOnly && !shareToken && !compact && (
                 <div className="absolute bottom-4 left-6 right-6 z-10 flex items-center justify-between pointer-events-none">
                     <span
                         className="group pointer-events-auto text-[10px] tracking-wide text-[var(--color-ink-muted)]/40 hover:text-[var(--color-ink-muted)] transition-colors cursor-default select-none"

@@ -15,7 +15,7 @@ type NotesContextType = {
     notes: Note[];
     trash: Note[];
     loading: boolean;
-    createNote: (id: string) => Promise<Note>;
+    createNote: (id: string, folderId?: string | null) => Promise<Note>;
     deleteNote: (id: string) => Promise<void>;
     restoreNote: (id: string) => Promise<void>;
     permanentlyDeleteNote: (id: string) => Promise<void>;
@@ -189,11 +189,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         adapter.saveNote(id, title, content, folderId);
     }, [adapter]);
 
-    const createNote = useCallback(async (id: string): Promise<Note> => {
-        const note: Note = { id, title: "Untitled", content: "", created_at: Date.now(), updated_at: Date.now() };
+    const createNote = useCallback(async (id: string, folderId?: string | null): Promise<Note> => {
+        const note: Note = { id, title: "Untitled", content: "", folder_id: folderId, created_at: Date.now(), updated_at: Date.now() };
         localEditsRef.current.set(id, note);
         setNotes((prev) => [note, ...prev]);
-        adapter.saveNote(id, "Untitled", "");
+        adapter.saveNote(id, "Untitled", "", folderId);
         return note;
     }, [adapter]);
 

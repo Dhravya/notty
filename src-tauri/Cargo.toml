@@ -15,6 +15,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "5"
 tauri-plugin-store = "2"
 tauri-plugin-deep-link = "2"
+tauri-plugin-global-shortcut = "2"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

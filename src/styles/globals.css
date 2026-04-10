@@ -134,27 +134,22 @@ body::before {
 [data-font="serif"] .ProseMirror { font-family: var(--font-serif); }
 [data-font="mono"] .ProseMirror { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-/* Ruled paper background — lines every 32px, aligned to text */
+/* Ruled paper background — visual only, never changes layout.
+   Line spacing = 1.125rem × 1.75 ≈ 1.96875rem, matching default ProseMirror line-height. */
 .editor-ruled-bg {
+    --ruled-line: calc(1.125rem * 1.75);
     background-image: repeating-linear-gradient(
         transparent,
-        transparent 31px,
-        color-mix(in srgb, var(--color-border-warm) 22%, transparent) 31px,
-        color-mix(in srgb, var(--color-border-warm) 22%, transparent) 32px
+        transparent calc(var(--ruled-line) - 1px),
+        color-mix(in srgb, var(--color-border-warm) 22%, transparent) calc(var(--ruled-line) - 1px),
+        color-mix(in srgb, var(--color-border-warm) 22%, transparent) var(--ruled-line)
     );
-    background-size: 100% 32px;
+    background-size: 100% var(--ruled-line);
 }
 
-.editor-ruled-bg .ProseMirror { font-size: 1.125rem; line-height: 32px; }
-.editor-ruled-bg .ProseMirror > * + * { margin-top: 0; }
-.editor-ruled-bg .ProseMirror p { margin-bottom: 0; min-height: 32px; }
-.editor-ruled-bg .ProseMirror h1 { font-size: 2rem; line-height: 64px; margin-top: 32px; margin-bottom: 0; }
-.editor-ruled-bg .ProseMirror h2 { font-size: 1.5rem; line-height: 32px; margin-top: 32px; margin-bottom: 0; }
-.editor-ruled-bg .ProseMirror h3 { font-size: 1.25rem; line-height: 32px; margin-top: 32px; margin-bottom: 0; }
-
-/* Placeholder */
+/* Placeholder — only on the very first empty paragraph or the currently-selected empty node */
 .ProseMirror p.is-editor-empty:first-child::before,
-.ProseMirror .is-empty::before {
+.ProseMirror > .is-empty::before {
     content: attr(data-placeholder);
     float: left;
     color: var(--color-ink-muted);
@@ -162,6 +157,12 @@ body::before {
     height: 0;
     font-family: var(--font-serif);
     font-style: italic;
+}
+/* Hide placeholder inside task/list items to avoid duplicate "Press '/' for commands..." */
+.ProseMirror ul[data-type="taskList"] .is-empty::before,
+.ProseMirror ul .is-empty::before,
+.ProseMirror ol .is-empty::before {
+    content: none;
 }
 
 /* Collaboration cursors */

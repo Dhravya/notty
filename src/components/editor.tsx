@@ -205,9 +205,10 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => clearInterval(interval);
     }, [saveNow]);
 
-    // Load: IndexedDB + HTTP in parallel. Only bootstrap from HTTP when the
-    // Yjs doc is empty — setContent on a non-empty Collaboration doc creates
-    // independent Yjs ops that merge/duplicate with existing server state.
+    // Load: IndexedDB + WebSocket sync in parallel. Only bootstrap from HTTP
+    // when the Yjs doc is STILL empty after both complete — setContent on a
+    // non-empty Collaboration doc creates independent Yjs ops that
+    // merge/duplicate with existing server state.
     const bootstrapRef = useRef<JSONContent | null>(null);
     useEffect(() => {
         let cancelled = false;
@@ -225,16 +226,23 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             return () => { cancelled = true; };
         }
 
-        // Fetch HTTP content in parallel with IndexedDB (no added latency)
+        // Fetch HTTP content in parallel (no added latency)
         const httpContent = Promise.race([
             adapter.getNote(noteId).catch((e) => { console.warn("[notty] HTTP bootstrap fetch failed:", e); return null; }),
             new Promise((r) => setTimeout(() => r(null), 1000)),
         ]);
 
-        Promise.all([waitForPersistence, httpContent]).then(([, data]: [any, any]) => {
+        // Wait for WebSocket sync too (with timeout) so we don't bootstrap
+        // content that's about to arrive via Yjs — that causes CRDT duplication
+        const wsSync = Promise.race([
+            provider.whenSynced,
+            new Promise((r) => setTimeout(r, 2000)),
+        ]);
+
+        Promise.all([waitForPersistence, httpContent, wsSync]).then(([, data]: [any, any, any]) => {
             if (cancelled) return;
             const hasYjsContent = ydoc.getXmlFragment("default").length > 1;
-            // Only bootstrap when Yjs doc is empty to prevent CRDT duplication
+            // Only bootstrap when Yjs doc is empty after all sync sources exhausted
             if (!hasYjsContent && data?.content) {
                 try {
                     const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
@@ -251,11 +259,12 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => { cancelled = true; };
     }, [noteId, ydoc, provider, adapter]);
 
-    // Connect WS after auth (web only — desktop uses local-first sync)
+    // Connect WS early so sync completes before bootstrap decision.
+    // Desktop connects via detectCloud() in the adapter instead.
     useEffect(() => {
         const isTauri = "__TAURI_INTERNALS__" in window;
-        if (user && ready && !isTauri) provider.connect();
-    }, [user, ready, provider]);
+        if (user && !isTauri) provider.connect();
+    }, [user, provider]);
 
     // Ref so unmount cleanup always calls the latest saveNow without dep churn
     const saveNowRef = useRef(saveNow);

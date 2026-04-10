@@ -150,7 +150,21 @@ export class UserNotesDurableObject extends DurableObject {
             Y.applyUpdate(doc, new Uint8Array(rows[0].yjs_state as ArrayBuffer));
         }
 
-        doc.on("update", () => {
+        doc.on("update", (update: Uint8Array, origin: any) => {
+            // Broadcast to all connected clients except the sender.
+            // origin is the WebSocket that caused this update (null for DB loads).
+            if (origin) {
+                const encoder = encoding.createEncoder();
+                encoding.writeVarUint(encoder, MSG_SYNC);
+                syncProtocol.writeUpdate(encoder, update);
+                const msg = encoding.toUint8Array(encoder);
+                for (const other of this.ctx.getWebSockets(noteId)) {
+                    if (other !== origin) {
+                        try { other.send(msg); } catch { other.close(); }
+                    }
+                }
+            }
+
             const existing = this.saveTimers.get(noteId);
             if (existing) clearTimeout(existing);
             this.saveTimers.set(noteId, setTimeout(() => {
@@ -795,7 +809,6 @@ export class UserNotesDurableObject extends DurableObject {
         if (msgType === MSG_SYNC) {
             // View-only users receive sync (get the doc) but can't push changes
             if (permission === "view") {
-                // Still respond to sync step 1 (so they get the doc), but don't apply or broadcast
                 const encoder = encoding.createEncoder();
                 encoding.writeVarUint(encoder, MSG_SYNC);
                 syncProtocol.readSyncMessage(decoder, encoder, doc, null);
@@ -804,9 +817,10 @@ export class UserNotesDurableObject extends DurableObject {
             }
             const encoder = encoding.createEncoder();
             encoding.writeVarUint(encoder, MSG_SYNC);
-            syncProtocol.readSyncMessage(decoder, encoder, doc, null);
+            // Pass ws as origin so the doc update handler can broadcast
+            // to all clients EXCEPT the sender
+            syncProtocol.readSyncMessage(decoder, encoder, doc, ws);
             if (encoding.length(encoder) > 1) ws.send(encoding.toUint8Array(encoder));
-            broadcast(data);
         } else if (msgType === MSG_AWARENESS) {
             // Awareness always flows (presence is visible for all)
             broadcast(data);

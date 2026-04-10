@@ -15,9 +15,12 @@ export class NottyProvider {
     private ws: WebSocket | null = null;
     connected = false;
     destroyed = false;
+    synced = false;
     private pendingUpdates: Uint8Array[] = [];
     private serverUrl: string | null = null;
     private reconnectDelay = 1000;
+    private _syncResolve: (() => void) | null = null;
+    whenSynced: Promise<void>;
 
     private shareToken: string | undefined;
     private authToken: string | undefined;
@@ -33,6 +36,7 @@ export class NottyProvider {
         this.offlineOnly = options?.connect === false;
         this.shareToken = options?.shareToken;
         this.authToken = options?.token;
+        this.whenSynced = new Promise((r) => { this._syncResolve = r; });
 
         // Offline persistence — skip for shared notes (no offline use, avoids stale duplicates)
         this.persistence = options?.shareToken
@@ -123,9 +127,14 @@ export class NottyProvider {
             if (msgType === MSG_SYNC) {
                 const encoder = encoding.createEncoder();
                 encoding.writeVarUint(encoder, MSG_SYNC);
-                syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
+                const syncType = syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
                 if (encoding.length(encoder) > 1) {
                     ws.send(encoding.toUint8Array(encoder));
+                }
+                // SyncStep2 (1) means the server sent us its state — initial sync is done
+                if (syncType === 1 && !this.synced) {
+                    this.synced = true;
+                    this._syncResolve?.();
                 }
             } else if (msgType === MSG_AWARENESS) {
                 const update = decoding.readVarUint8Array(decoder);

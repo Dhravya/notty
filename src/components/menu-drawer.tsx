@@ -43,7 +43,7 @@ export function MenuDrawer() {
                                 </Link>
                                 <button
                                     onClick={() => deleteNote(note.id)}
-                                    className="p-2 mr-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all text-[var(--color-ink-muted)] hover:text-red-500 hover:bg-red-500/10"
+                                    className="p-2 mr-2 rounded-lg opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-all text-[var(--color-ink-muted)] hover:text-red-500 hover:bg-red-500/10"
                                     aria-label="Delete"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

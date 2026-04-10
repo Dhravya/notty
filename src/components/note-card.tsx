@@ -146,7 +146,7 @@ export function NoteCard({
                     </div>
                     <button
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(note.id); }}
-                        className="p-1 rounded-lg opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-all duration-200"
+                        className="p-1 rounded-lg opacity-60 sm:opacity-0 sm:group-hover:opacity-70 hover:!opacity-100 transition-all duration-200"
                         style={{ color: color.text }}
                         aria-label="Delete note"
                     >

@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { renderPublicPage, renderPublicNote } from "./public-page";
 import { renderRSS } from "./rss";
+import { generateOgImage } from "./og-image";
 
 export { AuthDurableObject } from "../durable-objects/auth";
 export { UserNotesDurableObject } from "../durable-objects/user-notes";
@@ -82,6 +83,10 @@ app.get("*", async (c, next) => {
 
     return c.text("Not found", 404);
 });
+
+function escapeAttr(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 // --- Auth helpers ---
 
@@ -524,17 +529,64 @@ app.get("/api/shared-with-me", async (c) => {
     return c.json(notes.filter(Boolean));
 });
 
-// Resolve share token link — JSON for SPA, redirect for direct browser hits
-app.get("/api/shared/:token", async (c) => {
+// OG image for shared notes
+app.get("/api/shared/:token/og-image.png", async (c) => {
     const authStub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
     const res = await authStub.fetch(new Request(`https://do/internal/shares/by-token?token=${encodeURIComponent(c.req.param("token"))}`));
+    if (!res.ok) return c.text("Not found", 404);
+    const { noteId, ownerId } = await res.json() as any;
+
+    const ownerStub = c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(ownerId));
+    const noteRes = await ownerStub.fetch(new Request(`https://do/notes/${noteId}`));
+    if (!noteRes.ok) return c.text("Not found", 404);
+    const note = await noteRes.json() as any;
+
+    const png = await generateOgImage(note.title || "Untitled", note.content || "");
+    return c.body(png as any, 200, {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=3600",
+    });
+});
+
+// Resolve share token link — JSON for SPA, HTML with OG tags for crawlers
+app.get("/api/shared/:token", async (c) => {
+    const token = c.req.param("token");
+    const authStub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
+    const res = await authStub.fetch(new Request(`https://do/internal/shares/by-token?token=${encodeURIComponent(token)}`));
     if (!res.ok) return c.text("Invalid or expired share link", 404);
-    const { noteId } = await res.json() as any;
+    const { noteId, ownerId } = await res.json() as any;
+
     const accept = c.req.header("accept") || "";
     if (accept.includes("application/json")) {
-        return c.json({ noteId, token: c.req.param("token") });
+        return c.json({ noteId, token });
     }
-    return c.redirect(`/note/${noteId}?share=${c.req.param("token")}`);
+
+    // Fetch note metadata for OG tags
+    const ownerStub = c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(ownerId));
+    const noteRes = await ownerStub.fetch(new Request(`https://do/notes/${noteId}/meta`));
+    const title = noteRes.ok ? ((await noteRes.json()) as any).title || "Untitled" : "Shared Note";
+
+    const origin = new URL(c.req.url).origin;
+    const ogImageUrl = `${origin}/api/shared/${token}/og-image.png`;
+    const redirectUrl = `/note/${noteId}?share=${token}`;
+
+    return c.html(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta property="og:title" content="${escapeAttr(title)}">
+<meta property="og:description" content="Shared via Notty">
+<meta property="og:image" content="${ogImageUrl}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeAttr(title)}">
+<meta name="twitter:image" content="${ogImageUrl}">
+<meta http-equiv="refresh" content="0;url=${redirectUrl}">
+<title>${escapeAttr(title)} — Notty</title>
+</head><body>
+<p>Redirecting…</p>
+<script>location.replace(${JSON.stringify(redirectUrl)})</script>
+</body></html>`);
 });
 
 // --- Profile API ---

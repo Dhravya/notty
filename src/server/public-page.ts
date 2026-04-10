@@ -80,6 +80,26 @@ function renderNode(node: any): string {
     }
 }
 
+function extractExcerpt(content: string, skipFirst = false, maxLen = 160): string {
+    try {
+        const doc = typeof content === "string" ? JSON.parse(content) : content;
+        if (!doc?.content) return "";
+        const nodes = skipFirst ? doc.content.slice(1) : doc.content;
+        const parts: string[] = [];
+        function walk(ns: any[]) {
+            for (const n of ns) {
+                if (n.type === "text" && n.text) parts.push(n.text);
+                if (n.content) walk(n.content);
+            }
+        }
+        walk(nodes);
+        const text = parts.join(" ").replace(/\s+/g, " ").trim();
+        return escapeHtml(text.length > maxLen ? text.slice(0, maxLen) + "…" : text);
+    } catch {
+        return "";
+    }
+}
+
 const BODY_FONTS: Record<string, string> = {
     sans: '"DM Sans", system-ui, sans-serif',
     serif: '"Source Serif 4", Georgia, "Times New Roman", serif',
@@ -196,12 +216,21 @@ export function renderPublicNote(profile: any, note: any, baseUrl: string): stri
     const font = profile.font || "serif";
     const colorMode = profile.color_mode || "light";
 
+    const excerpt = extractExcerpt(note.content, true);
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${noteTitle} — ${pageTitle}</title>
+    <meta name="description" content="${excerpt}">
+    <meta property="og:title" content="${noteTitle}">
+    <meta property="og:description" content="${excerpt}">
+    <meta property="og:type" content="article">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="${noteTitle}">
+    <meta name="twitter:description" content="${excerpt}">
     <link rel="alternate" type="application/rss+xml" title="${pageTitle}" href="${baseUrl}/rss">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

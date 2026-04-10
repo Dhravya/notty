@@ -2,7 +2,6 @@ import satori from "satori";
 import { Resvg, initWasm } from "@resvg/resvg-wasm";
 // @ts-expect-error wasm import
 import resvgWasm from "@resvg/resvg-wasm/index_bg.wasm";
-
 let wasmReady = false;
 
 async function ensureWasm() {
@@ -14,46 +13,90 @@ async function ensureWasm() {
 const WIDTH = 1200;
 const HEIGHT = 630;
 
-function extractPlainText(content: string, maxLen = 280): string {
+/** Extract title from first heading in TipTap JSON */
+function extractTitle(content: string): string {
     try {
         const doc = typeof content === "string" ? JSON.parse(content) : content;
-        if (!doc?.content) return "";
-        const parts: string[] = [];
-        function walk(nodes: any[]) {
-            for (const node of nodes) {
-                if (node.type === "text" && node.text) parts.push(node.text);
-                if (node.content) walk(node.content);
-            }
-        }
-        walk(doc.content.slice(1)); // skip first node (title heading)
-        const text = parts.join(" ").replace(/\s+/g, " ").trim();
-        return text.length > maxLen ? text.slice(0, maxLen) + "…" : text;
+        if (!doc?.content?.[0]?.content) return "Untitled";
+        return doc.content[0].content.map((n: any) => n.text || "").join("").trim() || "Untitled";
     } catch {
-        return "";
+        return "Untitled";
+    }
+}
+
+/** Extract content lines (skipping title heading) for preview */
+function extractContentLines(content: string, maxLines = 6): string[] {
+    try {
+        const doc = typeof content === "string" ? JSON.parse(content) : content;
+        if (!doc?.content) return [];
+        const lines: string[] = [];
+        for (const node of doc.content.slice(1)) {
+            if (lines.length >= maxLines) break;
+            const parts: string[] = [];
+            function walk(n: any) {
+                if (n.type === "text" && n.text) parts.push(n.text);
+                if (n.content) n.content.forEach(walk);
+            }
+            walk(node);
+            const line = parts.join("").trim();
+            if (line) lines.push(line.length > 80 ? line.slice(0, 80) + "…" : line);
+        }
+        return lines;
+    } catch {
+        return [];
     }
 }
 
 async function loadFont(): Promise<ArrayBuffer> {
     const res = await fetch(
-        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&display=swap"
+        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap"
     );
     const css = await res.text();
     const urls = [...css.matchAll(/url\(([^)]+)\)/g)].map((m) => m[1]);
-    // Fetch the first woff2 font file
     const fontRes = await fetch(urls[0]);
     return fontRes.arrayBuffer();
 }
 
 let fontCache: ArrayBuffer | null = null;
+let logoCache: string | null = null;
+
+async function getLogoDataUri(logoUrl: string): Promise<string> {
+    if (logoCache) return logoCache;
+    const res = await fetch(logoUrl);
+    const buf = await res.arrayBuffer();
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    logoCache = `data:image/png;base64,${b64}`;
+    return logoCache;
+}
 
 export async function generateOgImage(
-    title: string,
-    content: string
+    noteTitle: string,
+    content: string,
+    logoUrl: string,
 ): Promise<ArrayBuffer> {
     await ensureWasm();
     if (!fontCache) fontCache = await loadFont();
 
-    const excerpt = extractPlainText(content);
+    const title = (noteTitle === "Untitled" || !noteTitle) ? extractTitle(content) : noteTitle;
+    const lines = extractContentLines(content);
+    const logoDataUri = await getLogoDataUri(logoUrl);
+
+    // Content lines with decreasing opacity for fade effect
+    const contentChildren = lines.map((line, i) => ({
+        type: "div",
+        props: {
+            style: {
+                fontSize: "22px",
+                color: "#2C2416",
+                lineHeight: 1.6,
+                opacity: Math.max(0.15, 1 - i * 0.18),
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap" as const,
+            },
+            children: line,
+        },
+    }));
 
     const svg = await satori(
         ({
@@ -64,38 +107,29 @@ export async function generateOgImage(
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
-                    justifyContent: "center",
-                    padding: "60px 80px",
-                    background: "linear-gradient(145deg, #FAF8F5 0%, #F0ECE4 100%)",
+                    padding: "56px 72px",
+                    background: "linear-gradient(160deg, #FAF8F5 0%, #F0ECE4 100%)",
                     fontFamily: "DM Sans",
                 },
                 children: [
+                    // Logo + branding
                     {
                         type: "div",
                         props: {
                             style: {
                                 display: "flex",
                                 alignItems: "center",
-                                marginBottom: "32px",
-                                gap: "12px",
+                                gap: "14px",
+                                marginBottom: "40px",
                             },
                             children: [
                                 {
-                                    type: "div",
+                                    type: "img",
                                     props: {
-                                        style: {
-                                            width: "36px",
-                                            height: "36px",
-                                            borderRadius: "8px",
-                                            background: "#2C2416",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            color: "#FAF8F5",
-                                            fontSize: "18px",
-                                            fontWeight: 700,
-                                        },
-                                        children: "N",
+                                        src: logoDataUri,
+                                        width: 40,
+                                        height: 40,
+                                        style: { borderRadius: "10px" },
                                     },
                                 },
                                 {
@@ -105,6 +139,7 @@ export async function generateOgImage(
                                             fontSize: "20px",
                                             color: "#8C8474",
                                             fontWeight: 500,
+                                            letterSpacing: "0.02em",
                                         },
                                         children: "Shared via Notty",
                                     },
@@ -112,39 +147,49 @@ export async function generateOgImage(
                             ],
                         },
                     },
+                    // Title
                     {
                         type: "div",
                         props: {
                             style: {
-                                fontSize: "52px",
+                                fontSize: title.length > 40 ? "40px" : "48px",
                                 fontWeight: 700,
                                 color: "#2C2416",
                                 lineHeight: 1.2,
-                                marginBottom: "24px",
+                                marginBottom: "28px",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
                             },
-                            children: title || "Untitled",
+                            children: title,
                         },
                     },
-                    excerpt
-                        ? {
+                    // Separator
+                    {
+                        type: "div",
+                        props: {
+                            style: {
+                                width: "60px",
+                                height: "3px",
+                                background: "#2AA198",
+                                borderRadius: "2px",
+                                marginBottom: "24px",
+                            },
+                            children: "",
+                        },
+                    },
+                    // Content preview with fade
+                    ...(contentChildren.length > 0
+                        ? contentChildren
+                        : [{
                               type: "div",
                               props: {
-                                  style: {
-                                      fontSize: "24px",
-                                      color: "#8C8474",
-                                      lineHeight: 1.5,
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                  },
-                                  children: excerpt,
+                                  style: { fontSize: "22px", color: "#8C8474" },
+                                  children: "",
                               },
-                          }
-                        : {
-                              type: "div",
-                              props: { style: { display: "none" }, children: "" },
-                          },
+                          }]),
                 ],
             },
         }) as any,
@@ -152,6 +197,7 @@ export async function generateOgImage(
             width: WIDTH,
             height: HEIGHT,
             fonts: [
+                { name: "DM Sans", data: fontCache, weight: 400, style: "normal" as const },
                 { name: "DM Sans", data: fontCache, weight: 500, style: "normal" as const },
                 { name: "DM Sans", data: fontCache, weight: 700, style: "normal" as const },
             ],

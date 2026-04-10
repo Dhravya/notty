@@ -541,7 +541,8 @@ app.get("/api/shared/:token/og-image.png", async (c) => {
     if (!noteRes.ok) return c.text("Not found", 404);
     const note = await noteRes.json() as any;
 
-    const png = await generateOgImage(note.title || "Untitled", note.content || "");
+    const origin = new URL(c.req.url).origin;
+    const png = await generateOgImage(note.title || "Untitled", note.content || "", `${origin}/logo.png`);
     return c.body(png as any, 200, {
         "Content-Type": "image/png",
         "Cache-Control": "public, max-age=3600",
@@ -561,10 +562,21 @@ app.get("/api/shared/:token", async (c) => {
         return c.json({ noteId, token });
     }
 
-    // Fetch note metadata for OG tags
+    // Fetch full note for OG tags (need content for title extraction)
     const ownerStub = c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(ownerId));
-    const noteRes = await ownerStub.fetch(new Request(`https://do/notes/${noteId}/meta`));
-    const title = noteRes.ok ? ((await noteRes.json()) as any).title || "Untitled" : "Shared Note";
+    const noteRes = await ownerStub.fetch(new Request(`https://do/notes/${noteId}`));
+    let title = "Shared Note";
+    if (noteRes.ok) {
+        const note = await noteRes.json() as any;
+        title = note.title || "Untitled";
+        if (title === "Untitled" && note.content) {
+            try {
+                const doc = JSON.parse(note.content);
+                const first = doc?.content?.[0]?.content?.map((n: any) => n.text || "").join("").trim();
+                if (first) title = first;
+            } catch {}
+        }
+    }
 
     const origin = new URL(c.req.url).origin;
     const ogImageUrl = `${origin}/api/shared/${token}/og-image.png`;
@@ -805,8 +817,20 @@ app.get("/shared/:token", async (c) => {
     if (res.ok) {
         const { noteId, ownerId } = await res.json() as any;
         const ownerStub = c.env.USER_NOTES_DO.get(c.env.USER_NOTES_DO.idFromName(ownerId));
-        const noteRes = await ownerStub.fetch(new Request(`https://do/notes/${noteId}/meta`));
-        const title = noteRes.ok ? ((await noteRes.json()) as any).title || "Untitled" : "Shared Note";
+        const noteRes = await ownerStub.fetch(new Request(`https://do/notes/${noteId}`));
+        let title = "Shared Note";
+        if (noteRes.ok) {
+            const note = await noteRes.json() as any;
+            title = note.title || "Untitled";
+            // If title is "Untitled", try extracting from content's first heading
+            if (title === "Untitled" && note.content) {
+                try {
+                    const doc = JSON.parse(note.content);
+                    const first = doc?.content?.[0]?.content?.map((n: any) => n.text || "").join("").trim();
+                    if (first) title = first;
+                } catch {}
+            }
+        }
         const ogImageUrl = `${url.origin}/api/shared/${token}/og-image.png`;
 
         // Replace static OG tags with note-specific ones

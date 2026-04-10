@@ -125,6 +125,10 @@ export class DesktopAdapter implements NottyAdapter {
                         if (!existing || n.updated_at > existing.updated_at) {
                             merged.set(n.id, n);
                             invoke("save_note", { id: n.id, title: n.title, content: n.content, folderId: n.folder_id ?? null }).catch(() => {});
+                        } else if (existing && n.folder_id && existing.folder_id !== n.folder_id) {
+                            // Cloud folder assignment is authoritative — sync it even if local content is newer
+                            existing.folder_id = n.folder_id;
+                            invoke("move_note_to_folder", { id: n.id, folderId: n.folder_id }).catch(() => {});
                         }
                     }
                     return Array.from(merged.values()).sort((a, b) => b.updated_at - a.updated_at);

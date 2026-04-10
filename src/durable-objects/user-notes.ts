@@ -156,10 +156,22 @@ export class UserNotesDurableObject extends DurableObject {
             this.saveTimers.set(noteId, setTimeout(() => {
                 try {
                     const state = Y.encodeStateAsUpdate(doc!);
-                    this.sql.exec(
-                        "UPDATE notes SET yjs_state = ?, updated_at = unixepoch() WHERE id = ?",
-                        state, noteId
-                    );
+                    // Also sync content + title columns so HTTP reads stay fresh
+                    const content = this.extractContentJson(noteId);
+                    if (content) {
+                        const parsed = JSON.parse(content);
+                        const firstNode = parsed?.content?.[0];
+                        const title = firstNode?.content?.map((n: any) => n.text || "").join("").trim() || "Untitled";
+                        this.sql.exec(
+                            "UPDATE notes SET yjs_state = ?, content = ?, title = ?, updated_at = unixepoch() WHERE id = ?",
+                            state, content, title, noteId
+                        );
+                    } else {
+                        this.sql.exec(
+                            "UPDATE notes SET yjs_state = ?, updated_at = unixepoch() WHERE id = ?",
+                            state, noteId
+                        );
+                    }
                 } catch (e) {
                     console.error(`Failed to persist Yjs state for note ${noteId}:`, e);
                 }

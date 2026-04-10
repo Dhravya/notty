@@ -60,6 +60,9 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     const [ready, setReady] = useState(false);
     const editorRef = useRef<EditorInstance | null>(null);
     const lastSavedRef = useRef<string>("");
+    // Stable ref for folderId — prevents stale closures during unmount/view-transitions
+    const folderIdRef = useRef(folderId);
+    folderIdRef.current = folderId;
     const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
     const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
     const [wordCount, setWordCount] = useState(0);
@@ -114,13 +117,13 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         lastSavedRef.current = content;
         const title = extractTitle(json);
         setSaveState("saving");
-        saveNote(noteId, title, content, folderId);
+        saveNote(noteId, title, content, folderIdRef.current);
         clearTimeout(savedTimerRef.current);
         savedTimerRef.current = setTimeout(() => {
             setSaveState("saved");
             savedTimerRef.current = setTimeout(() => setSaveState("idle"), 3000);
         }, 400);
-    }, [noteId, saveNote, user, shareToken, readOnly, folderId]);
+    }, [noteId, saveNote, user, shareToken, readOnly]);
 
     // Debounced save — fires 1.5s after last keystroke
     const debouncedSave = useDebouncedCallback((editor: EditorInstance) => {
@@ -222,6 +225,10 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         if (user && ready) provider.connect();
     }, [user, ready, provider]);
 
+    // Ref so unmount cleanup always calls the latest saveNow without dep churn
+    const saveNowRef = useRef(saveNow);
+    saveNowRef.current = saveNow;
+
     useEffect(() => () => {
         // On content reset (checkout/restore/merge), cancel pending saves
         // so they don't overwrite the new content. Otherwise flush normally.
@@ -230,6 +237,9 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             saveGuardRef.current = false;
         } else {
             debouncedSave.flush();
+            // Belt-and-suspenders: if flush was a no-op (no pending call),
+            // still save — catches the case where escape fires before first debounce
+            if (editorRef.current) saveNowRef.current(editorRef.current);
         }
         provider.destroy();
         ydoc.destroy();

@@ -382,17 +382,26 @@ export class UserNotesDurableObject extends DurableObject {
             const existing = this.getNote(id);
 
             if (existing) {
-                this.sql.exec(
-                    `UPDATE notes SET title = ?, content = ?, yjs_state = NULL, folder_id = ?, sync_mode = ?, updated_at = unixepoch() WHERE id = ?`,
-                    body.title || "Untitled", body.content || "",
-                    body.folder_id !== undefined ? body.folder_id : existing.folder_id,
-                    body.sync_mode !== undefined ? body.sync_mode : existing.sync_mode,
-                    id
-                );
-                // Evict stale Yjs doc so next WebSocket client starts fresh
-                this.docs.delete(id);
-                const timer = this.saveTimers.get(id);
-                if (timer) { clearTimeout(timer); this.saveTimers.delete(id); }
+                const hasActiveYjs = this.docs.has(id);
+                if (hasActiveYjs) {
+                    // Yjs WebSocket is the source of truth — only update metadata columns
+                    this.sql.exec(
+                        `UPDATE notes SET title = ?, content = ?, folder_id = ?, sync_mode = ?, updated_at = unixepoch() WHERE id = ?`,
+                        body.title || "Untitled", body.content || "",
+                        body.folder_id !== undefined ? body.folder_id : existing.folder_id,
+                        body.sync_mode !== undefined ? body.sync_mode : existing.sync_mode,
+                        id
+                    );
+                } else {
+                    // No active Yjs session — null stale yjs_state so next client bootstraps from HTTP
+                    this.sql.exec(
+                        `UPDATE notes SET title = ?, content = ?, yjs_state = NULL, folder_id = ?, sync_mode = ?, updated_at = unixepoch() WHERE id = ?`,
+                        body.title || "Untitled", body.content || "",
+                        body.folder_id !== undefined ? body.folder_id : existing.folder_id,
+                        body.sync_mode !== undefined ? body.sync_mode : existing.sync_mode,
+                        id
+                    );
+                }
                 if (body.content) this.createVersion(id, body.title || "Untitled", body.content);
             } else {
                 this.sql.exec(

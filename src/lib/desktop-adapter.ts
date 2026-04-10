@@ -124,7 +124,7 @@ export class DesktopAdapter implements NottyAdapter {
                         const existing = merged.get(n.id);
                         if (!existing || n.updated_at > existing.updated_at) {
                             merged.set(n.id, n);
-                            invoke("save_note", { id: n.id, title: n.title, content: n.content }).catch(() => {});
+                            invoke("save_note", { id: n.id, title: n.title, content: n.content, folderId: n.folder_id ?? null }).catch(() => {});
                         }
                     }
                     return Array.from(merged.values()).sort((a, b) => b.updated_at - a.updated_at);

@@ -94,10 +94,11 @@ export function QuickNotePage() {
             if (e.metaKey && e.key === "[") { e.preventDefault(); prev(); }
             if (e.metaKey && e.key === "]") { e.preventDefault(); next(); }
             if (e.metaKey && e.key === "n") { e.preventDefault(); addNewNote(); }
+            if (e.metaKey && e.key === "o") { e.preventDefault(); openInMain(); }
         };
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, [prev, next, addNewNote]);
+    }, [prev, next, addNewNote, openInMain]);
 
     if (!loaded || !user) {
         return <div className="h-screen bg-[var(--color-paper)] flex items-center justify-center text-sm text-[var(--color-ink-muted)]">Loading...</div>;
@@ -116,28 +117,34 @@ export function QuickNotePage() {
                     quick note
                 </span>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5">
                     {quickNotes.length > 1 && (
                         <>
-                            <button onClick={prev} className="p-1 rounded hover:bg-[var(--color-border-warm)] transition-colors" title="Previous (Cmd+[)">
-                                <ChevronLeft size={14} className="text-[var(--color-ink-muted)]" />
+                            <button onClick={prev} className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--color-border-warm)] transition-colors">
+                                <ChevronLeft size={12} className="text-[var(--color-ink-muted)]" />
+                                <kbd className="text-[9px] text-[var(--color-ink-muted)] opacity-60">⌘[</kbd>
                             </button>
                             <span className="text-[10px] text-[var(--color-ink-muted)] tabular-nums min-w-[2rem] text-center">
-                                {currentIndex + 1} / {quickNotes.length}
+                                {currentIndex + 1}/{quickNotes.length}
                             </span>
-                            <button onClick={next} className="p-1 rounded hover:bg-[var(--color-border-warm)] transition-colors" title="Next (Cmd+])">
-                                <ChevronRight size={14} className="text-[var(--color-ink-muted)]" />
+                            <button onClick={next} className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--color-border-warm)] transition-colors">
+                                <kbd className="text-[9px] text-[var(--color-ink-muted)] opacity-60">⌘]</kbd>
+                                <ChevronRight size={12} className="text-[var(--color-ink-muted)]" />
                             </button>
                         </>
                     )}
-                    <button onClick={addNewNote} className="p-1 rounded hover:bg-[var(--color-border-warm)] transition-colors" title="New quick note (Cmd+N)">
-                        <Plus size={14} className="text-[var(--color-ink-muted)]" />
+                    <div className="w-px h-3 bg-[var(--color-border-warm)] mx-1" />
+                    <button onClick={addNewNote} className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--color-border-warm)] transition-colors">
+                        <Plus size={12} className="text-[var(--color-ink-muted)]" />
+                        <kbd className="text-[9px] text-[var(--color-ink-muted)] opacity-60">⌘N</kbd>
                     </button>
-                    <button onClick={openInMain} className="p-1 rounded hover:bg-[var(--color-border-warm)] transition-colors" title="Open in main window">
-                        <ExternalLink size={14} className="text-[var(--color-ink-muted)]" />
+                    <button onClick={openInMain} className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--color-border-warm)] transition-colors">
+                        <ExternalLink size={12} className="text-[var(--color-ink-muted)]" />
+                        <kbd className="text-[9px] text-[var(--color-ink-muted)] opacity-60">⌘O</kbd>
                     </button>
-                    <button onClick={hideWindow} className="p-1 rounded hover:bg-[var(--color-border-warm)] transition-colors" title="Close (Esc)">
-                        <X size={14} className="text-[var(--color-ink-muted)]" />
+                    <button onClick={hideWindow} className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--color-border-warm)] transition-colors">
+                        <X size={12} className="text-[var(--color-ink-muted)]" />
+                        <kbd className="text-[9px] text-[var(--color-ink-muted)] opacity-60">esc</kbd>
                     </button>
                 </div>
             </div>

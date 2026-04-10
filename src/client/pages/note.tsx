@@ -131,8 +131,8 @@ export function NotePage() {
     const { user, loading: authLoading } = useAuth();
     const shareToken = searchParams.get("share") || undefined;
 
-    // Folder attachment is deferred — the editor's first save will include it
-    const folderId = searchParams.get("folder");
+    // Only pass folder_id on first save (new note) — undefined means "don't change"
+    const folderId = searchParams.get("folder") ?? undefined;
 
     const [showControls, setShowControls] = useState(true);
     const [showShare, setShowShare] = useState(false);

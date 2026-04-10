@@ -13,6 +13,8 @@ import { AuthPasskeyPage } from "./pages/auth-passkey";
 import { SharedResolvePage } from "./pages/shared-resolve";
 import { PublicSettingsPage } from "./pages/public-settings";
 import { TrashPage } from "./pages/trash";
+import { lazy, Suspense } from "react";
+const QuickNotePage = lazy(() => import("./pages/quick-note").then(m => ({ default: m.QuickNotePage })));
 import { Toaster } from "sonner";
 import "@/styles/globals.css";
 
@@ -49,6 +51,7 @@ getAdapter().then((adapter) => {
                                         <Route path="/auth/passkey" element={<AuthPasskeyPage />} />
                                         <Route path="/shared/:token" element={<SharedResolvePage />} />
                                         <Route path="/settings/public" element={<PublicSettingsPage />} />
+                                        <Route path="/quick-note" element={<Suspense><QuickNotePage /></Suspense>} />
                                     </Routes>
                                 </MediaProvider>
                             </FoldersProvider>

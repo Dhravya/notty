@@ -11,8 +11,14 @@ export async function handleDeepLinkToken(url: string) {
     if (!token) return;
     const { getDesktopSettings } = await import("@/lib/desktop-settings");
     const settings = await getDesktopSettings();
-    await fetch(`${settings.cloudUrl}/api/auth/exchange-token?token=${token}`, {
-        credentials: "include",
-    });
+    const res = await fetch(`${settings.cloudUrl}/api/auth/exchange-token?token=${token}`);
+    if (!res.ok) return;
+    const data = await res.json() as { sessionToken?: string };
+    if (data.sessionToken) {
+        const { load } = await import("@tauri-apps/plugin-store");
+        const store = await load("settings.json");
+        await store.set("sessionToken", data.sessionToken);
+        await store.save();
+    }
     window.location.reload();
 }

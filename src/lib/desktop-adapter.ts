@@ -1,7 +1,7 @@
 import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
 import type * as Y from "yjs";
 import { NottyProvider } from "./yjs-provider";
-import { authClient } from "./auth-client";
+import { authClient, createDesktopAuthClient } from "./auth-client";
 import { getDesktopSettings } from "./desktop-settings";
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -17,6 +17,23 @@ function syncMarkdown() {
 // Never blocks local operations — cloud sync is fire-and-forget.
 let cloudUrlCache: string | null | undefined = undefined; // undefined = not checked yet
 let cloudCheckPromise: Promise<string | null> | null = null;
+let cloudAuthClient: ReturnType<typeof createDesktopAuthClient> | null = null;
+let sessionTokenCache: string | null = null;
+
+function getCloudAuth() {
+    return cloudAuthClient || authClient;
+}
+
+// Authenticated fetch to cloud — attaches session token via custom header
+// (Cookie is a forbidden header in browser fetch, so we use X-Session-Token
+// and the server converts it to a cookie before passing to Better Auth)
+function cloudFetch(url: string, init?: RequestInit): Promise<Response> {
+    const headers = new Headers(init?.headers);
+    if (sessionTokenCache) {
+        headers.set("X-Session-Token", sessionTokenCache);
+    }
+    return fetch(url, { ...init, headers });
+}
 
 async function detectCloud(): Promise<string | null> {
     if (cloudUrlCache !== undefined) return cloudUrlCache;
@@ -27,8 +44,13 @@ async function detectCloud(): Promise<string | null> {
             const settings = await getDesktopSettings();
             const url = settings.cloudUrl;
             if (!url) { cloudUrlCache = null; return null; }
-            const res = await fetch(`${url}/api/auth/get-session`, { signal: AbortSignal.timeout(2000) });
-            if (res.ok) { cloudUrlCache = url; return url; }
+            sessionTokenCache = settings.sessionToken;
+            const res = await cloudFetch(`${url}/api/auth/get-session`, { signal: AbortSignal.timeout(2000) });
+            if (res.ok) {
+                cloudUrlCache = url;
+                cloudAuthClient = createDesktopAuthClient(url);
+                return url;
+            }
         } catch {}
         cloudUrlCache = null;
         return null;
@@ -40,6 +62,8 @@ async function detectCloud(): Promise<string | null> {
 export function resetCloudDetection() {
     cloudUrlCache = undefined;
     cloudCheckPromise = null;
+    cloudAuthClient = null;
+    sessionTokenCache = null;
 }
 
 // Fire-and-forget cloud sync — never awaited, never blocks local ops
@@ -56,11 +80,14 @@ export class DesktopAdapter implements NottyAdapter {
     }
 
     async getSession(): Promise<User | null> {
-        const cloud = cloudUrlCache;
-        if (cloud) {
+        const cloud = await detectCloud();
+        if (cloud && sessionTokenCache) {
             try {
-                const session = await authClient.getSession();
-                if (session.data?.user) return session.data.user as User;
+                const res = await cloudFetch(`${cloud}/api/auth/get-session`);
+                if (res.ok) {
+                    const data = await res.json() as { user?: User };
+                    if (data.user) return data.user;
+                }
             } catch {}
         }
         return { id: "local", name: "Local User" };
@@ -70,7 +97,7 @@ export class DesktopAdapter implements NottyAdapter {
         const cloud = await detectCloud();
         if (cloud) {
             try {
-                const res = await authClient.signIn.anonymous();
+                const res = await getCloudAuth().signIn.anonymous();
                 if (res.data?.user) return res.data.user as User;
             } catch {}
         }
@@ -78,7 +105,7 @@ export class DesktopAdapter implements NottyAdapter {
     }
 
     async signOut(): Promise<void> {
-        try { await authClient.signOut(); } catch {}
+        try { await getCloudAuth().signOut(); } catch {}
     }
 
     async getNotes(): Promise<Note[]> {
@@ -88,7 +115,7 @@ export class DesktopAdapter implements NottyAdapter {
         const cloud = cloudUrlCache;
         if (cloud) {
             try {
-                const res = await fetch(`${cloud}/api/notes`, { signal: AbortSignal.timeout(3000) });
+                const res = await cloudFetch(`${cloud}/api/notes`, { signal: AbortSignal.timeout(3000) });
                 if (res.ok) {
                     const cloudNotes: Note[] = await res.json();
                     const merged = new Map<string, Note>();
@@ -115,7 +142,7 @@ export class DesktopAdapter implements NottyAdapter {
         const cloud = cloudUrlCache;
         if (cloud) {
             try {
-                const res = await fetch(`${cloud}/api/notes/${id}`, { signal: AbortSignal.timeout(2000) });
+                const res = await cloudFetch(`${cloud}/api/notes/${id}`, { signal: AbortSignal.timeout(2000) });
                 if (res.ok) return res.json();
             } catch {}
         }
@@ -130,7 +157,7 @@ export class DesktopAdapter implements NottyAdapter {
         cloudSync((cloud) => {
             const body: Record<string, any> = { id, title, content };
             if (folderId !== undefined) body.folder_id = folderId;
-            fetch(`${cloud}/api/notes`, {
+            cloudFetch(`${cloud}/api/notes`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
@@ -142,7 +169,7 @@ export class DesktopAdapter implements NottyAdapter {
         await invoke("soft_delete_note", { id });
         syncMarkdown();
         cloudSync((cloud) => {
-            fetch(`${cloud}/api/notes/${id}`, { method: "DELETE" }).catch(() => {});
+            cloudFetch(`${cloud}/api/notes/${id}`, { method: "DELETE" }).catch(() => {});
         });
     }
 
@@ -154,7 +181,7 @@ export class DesktopAdapter implements NottyAdapter {
         await invoke("restore_note", { id });
         syncMarkdown();
         cloudSync((cloud) => {
-            fetch(`${cloud}/api/notes/${id}/restore`, { method: "POST" }).catch(() => {});
+            cloudFetch(`${cloud}/api/notes/${id}/restore`, { method: "POST" }).catch(() => {});
         });
         return invoke("get_note", { id });
     }
@@ -163,7 +190,7 @@ export class DesktopAdapter implements NottyAdapter {
         await invoke("delete_note", { id });
         syncMarkdown();
         cloudSync((cloud) => {
-            fetch(`${cloud}/api/notes/${id}/permanent`, { method: "DELETE" }).catch(() => {});
+            cloudFetch(`${cloud}/api/notes/${id}/permanent`, { method: "DELETE" }).catch(() => {});
         });
     }
 
@@ -172,7 +199,7 @@ export class DesktopAdapter implements NottyAdapter {
         const cloud = cloudUrlCache;
         if (cloud) {
             try {
-                const res = await fetch(`${cloud}/api/folders`, { signal: AbortSignal.timeout(3000) });
+                const res = await cloudFetch(`${cloud}/api/folders`, { signal: AbortSignal.timeout(3000) });
                 if (res.ok) {
                     const cloudFolders: Folder[] = await res.json();
                     const merged = new Map<string, Folder>();
@@ -194,7 +221,7 @@ export class DesktopAdapter implements NottyAdapter {
     async saveFolder(folder: Partial<Folder> & { id: string; name: string }): Promise<void> {
         await invoke("save_folder", { id: folder.id, name: folder.name, color: folder.color, description: folder.description, sortOrder: folder.sort_order });
         cloudSync((cloud) => {
-            fetch(`${cloud}/api/folders`, {
+            cloudFetch(`${cloud}/api/folders`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(folder),
@@ -205,14 +232,14 @@ export class DesktopAdapter implements NottyAdapter {
     async deleteFolder(id: string): Promise<void> {
         await invoke("delete_folder", { id });
         cloudSync((cloud) => {
-            fetch(`${cloud}/api/folders/${id}`, { method: "DELETE" }).catch(() => {});
+            cloudFetch(`${cloud}/api/folders/${id}`, { method: "DELETE" }).catch(() => {});
         });
     }
 
     async moveNoteToFolder(noteId: string, folderId: string | null): Promise<void> {
         await invoke("move_note_to_folder", { id: noteId, folderId });
         cloudSync((cloud) => {
-            fetch(`${cloud}/api/notes/${noteId}/folder`, {
+            cloudFetch(`${cloud}/api/notes/${noteId}/folder`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ folder_id: folderId }),
@@ -227,7 +254,7 @@ export class DesktopAdapter implements NottyAdapter {
             cloudSync(async (cloud) => {
                 const note = await invoke<Note | null>("get_note", { id: noteId });
                 if (note) {
-                    fetch(`${cloud}/api/notes`, {
+                    cloudFetch(`${cloud}/api/notes`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ id: note.id, title: note.title, content: note.content, folder_id: note.folder_id, sync_mode: mode }),

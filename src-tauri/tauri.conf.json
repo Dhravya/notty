@@ -32,7 +32,7 @@
     },
     "bundle": {
         "active": true,
-        "targets": "all",
+        "targets": ["app", "dmg"],
         "icon": ["icons/icon.png"]
     }
 }

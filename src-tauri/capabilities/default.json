@@ -1,0 +1,22 @@
+{
+    "identifier": "default",
+    "description": "Default capabilities for all windows",
+    "windows": ["*"],
+    "permissions": [
+        "core:default",
+        "core:window:default",
+        "core:window:allow-hide",
+        "core:window:allow-show",
+        "core:window:allow-set-focus",
+        "core:window:allow-close",
+        "core:window:allow-start-dragging",
+        "core:webview:default",
+        "core:webview:allow-create-webview-window",
+        "global-shortcut:allow-register",
+        "global-shortcut:allow-unregister",
+        "global-shortcut:allow-is-registered",
+        "shell:allow-open",
+        "store:default",
+        "deep-link:default"
+    ]
+}

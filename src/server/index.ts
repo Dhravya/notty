@@ -22,7 +22,7 @@ app.use("*", cors({
     origin: (origin) => origin || "*",
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Lock-Token"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Lock-Token", "X-Session-Token"],
 }));
 
 // --- Subdomain detection for public pages ---
@@ -94,8 +94,15 @@ async function getSession(env: Env, request: Request) {
     const stub = env.AUTH_DO.get(env.AUTH_DO.idFromName("auth-singleton"));
     const url = new URL(request.url);
     const headers = new Headers();
-    const cookie = request.headers.get("Cookie");
-    if (cookie) headers.set("Cookie", cookie);
+    // Forward existing cookie, or inject from X-Session-Token header
+    const existingCookie = request.headers.get("Cookie");
+    const headerToken = request.headers.get("X-Session-Token");
+    if (existingCookie) {
+        headers.set("Cookie", existingCookie);
+    } else if (headerToken) {
+        // Use __Secure- prefix since the DO request URL is https://
+        headers.set("Cookie", `__Secure-better-auth.session_token=${headerToken}`);
+    }
     const res = await stub.fetch(new Request(`${url.origin}/api/auth/get-session`, { headers }));
     if (!res.ok) return null;
     const data: any = await res.json();
@@ -175,44 +182,64 @@ function simpleHmac(secret: string, data: string): string {
     return hash.toString(36);
 }
 
-// --- Auth routes — proxy to AuthDO ---
+// Get the session cookie value, checking both Cookie header and X-Session-Token (Tauri desktop)
+function getSessionCookie(request: Request): string | null {
+    const cookie = request.headers.get("Cookie") || "";
+    // Match both __Secure-better-auth.session_token (HTTPS) and better-auth.session_token (HTTP)
+    const match = cookie.match(/(?:__Secure-)?better-auth\.session_token=([^;]+)/);
+    if (match) return match[1]!;
+    return request.headers.get("X-Session-Token");
+}
+
+// --- Auth routes — proxy to AuthDO, with token exchange for Tauri desktop ---
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
+    const path = new URL(c.req.url).pathname;
+
+    // Tauri desktop: create a one-time token from an authenticated session
+    if (path === "/api/auth/create-token" && c.req.method === "POST") {
+        const session = await getSession(c.env, c.req.raw);
+        if (!session) return c.text("Unauthorized", 401);
+        const sessionToken = getSessionCookie(c.req.raw);
+        if (!sessionToken) return c.text("No session", 400);
+
+        const token = crypto.randomUUID();
+        const stub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
+        await stub.fetch(new Request("https://do/internal/tokens", {
+            method: "POST",
+            body: JSON.stringify({ token, sessionToken }),
+        }));
+        return c.json({ token });
+    }
+
+    // Tauri desktop: exchange a one-time token for a session token
+    if (path === "/api/auth/exchange-token" && c.req.method === "GET") {
+        const token = c.req.query("token");
+        if (!token) return c.text("Missing token", 400);
+
+        const stub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
+        const res = await stub.fetch(new Request(`https://do/internal/tokens?token=${token}`));
+        if (!res.ok) return c.text("Invalid or expired token", 401);
+        const { sessionToken } = await res.json() as { sessionToken: string };
+
+        return new Response(JSON.stringify({ ok: true, sessionToken }), {
+            headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": c.req.header("Origin") || "*",
+                "Access-Control-Allow-Credentials": "true",
+                "Set-Cookie": `__Secure-better-auth.session_token=${sessionToken}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`,
+            },
+        });
+    }
+
+    // Default: proxy to AuthDO (Better Auth)
     const stub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
+    const headerToken = c.req.header("X-Session-Token");
+    if (headerToken && !c.req.header("Cookie")?.includes("session_token")) {
+        const headers = new Headers(c.req.raw.headers);
+        headers.set("Cookie", `__Secure-better-auth.session_token=${headerToken}`);
+        return stub.fetch(new Request(c.req.raw.url, { method: c.req.method, headers }));
+    }
     return stub.fetch(c.req.raw);
-});
-
-// Token exchange for Tauri deep-link auth
-app.post("/api/auth/create-token", async (c) => {
-    const session = await getSession(c.env, c.req.raw);
-    if (!session) return c.text("Unauthorized", 401);
-    const cookie = c.req.header("Cookie") || "";
-    const match = cookie.match(/better-auth\.session_token=([^;]+)/);
-    if (!match) return c.text("No session", 400);
-
-    const token = crypto.randomUUID();
-    const stub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
-    await stub.fetch(new Request("https://do/internal/tokens", {
-        method: "POST",
-        body: JSON.stringify({ token, sessionToken: match[1] }),
-    }));
-    return c.json({ token });
-});
-
-app.get("/api/auth/exchange-token", async (c) => {
-    const token = c.req.query("token");
-    if (!token) return c.text("Missing token", 400);
-
-    const stub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
-    const res = await stub.fetch(new Request(`https://do/internal/tokens?token=${token}`));
-    if (!res.ok) return c.text("Invalid or expired token", 401);
-    const { sessionToken } = await res.json() as { sessionToken: string };
-
-    return new Response(JSON.stringify({ ok: true }), {
-        headers: {
-            "Content-Type": "application/json",
-            "Set-Cookie": `better-auth.session_token=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`,
-        },
-    });
 });
 
 const requireAuth = async (c: any, next: any) => {

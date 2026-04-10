@@ -53,6 +53,11 @@ impl Database {
         let _ = conn.execute_batch("ALTER TABLE notes ADD COLUMN sync_mode TEXT NOT NULL DEFAULT 'cloud'");
         let _ = conn.execute_batch("ALTER TABLE folders ADD COLUMN description TEXT NOT NULL DEFAULT ''");
         let _ = conn.execute_batch("ALTER TABLE notes ADD COLUMN deleted_at INTEGER");
+        // Ensure the __quick_notes__ folder exists
+        let _ = conn.execute(
+            "INSERT OR IGNORE INTO folders (id, name, color, description, sort_order) VALUES ('__quick_notes__', 'Quick Notes', '#F59E0B', 'Notes created via quick capture', -1)",
+            [],
+        );
         Ok(Database(Mutex::new(conn)))
     }
 }
@@ -252,6 +257,30 @@ pub fn save_folder(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_quick_notes(db: tauri::State<Database>) -> Result<Vec<Note>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT id, title, content, folder_id, sync_mode, created_at, updated_at FROM notes WHERE folder_id = '__quick_notes__' AND deleted_at IS NULL ORDER BY updated_at DESC")
+        .map_err(|e| e.to_string())?;
+    let notes = stmt
+        .query_map([], |row| {
+            Ok(Note {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                content: row.get(2)?,
+                folder_id: row.get(3)?,
+                sync_mode: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|n| n.ok())
+        .collect();
+    Ok(notes)
 }
 
 #[tauri::command]

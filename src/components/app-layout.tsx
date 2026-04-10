@@ -1,10 +1,12 @@
 import { useState, type ReactNode, type CSSProperties } from "react";
 import { Sidebar } from "./sidebar";
+import { TabBar } from "./tab-bar";
 import { CommandPalette } from "./command-palette";
 import { ShortcutsHelp } from "./shortcuts-help";
 import { useFolders } from "@/context/folders-context";
 import { useHotkeys } from "@/lib/hotkeys";
 import { toggleDarkMode } from "@/lib/dark-mode";
+import { isTauri } from "@/lib/platform";
 
 export function AppLayout({ children }: { children: ReactNode }) {
     const { folders, selectedFolderId } = useFolders();
@@ -39,6 +41,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 className="flex-1 overflow-y-auto transition-colors duration-300 min-w-0"
                 style={{ backgroundColor: folder?.color ? "var(--folder-tint)" : "var(--color-paper)" }}
             >
+                {/* Tab bar (Tauri) or plain drag region */}
+                {isTauri && <TabBar />}
                 {/* Mobile menu button */}
                 {!sidebarVisible && (
                     <button

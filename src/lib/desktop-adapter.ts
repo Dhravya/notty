@@ -13,7 +13,7 @@ function syncMarkdown() {
     invoke("sync_to_markdown").catch(console.error);
 }
 
-// Cloud detection: runs once at startup, then caches.
+// Cloud detection: caches successful results, retries on failure.
 // Never blocks local operations — cloud sync is fire-and-forget.
 let cloudUrlCache: string | null | undefined = undefined; // undefined = not checked yet
 let cloudCheckPromise: Promise<string | null> | null = null;
@@ -36,27 +36,35 @@ function cloudFetch(url: string, init?: RequestInit): Promise<Response> {
 }
 
 async function detectCloud(): Promise<string | null> {
-    if (cloudUrlCache !== undefined) return cloudUrlCache;
+    if (cloudUrlCache) return cloudUrlCache; // cached success
     if (cloudCheckPromise) return cloudCheckPromise;
 
     cloudCheckPromise = (async () => {
         try {
             const settings = await getDesktopSettings();
             const url = settings.cloudUrl;
-            if (!url) { cloudUrlCache = null; return null; }
+            if (!url) return null;
             sessionTokenCache = settings.sessionToken;
+            if (!sessionTokenCache) {
+                console.warn("[notty] No session token — cloud sync disabled until sign-in");
+                return null;
+            }
             const res = await cloudFetch(`${url}/api/auth/get-session`, { signal: AbortSignal.timeout(2000) });
             if (res.ok) {
                 cloudUrlCache = url;
                 cloudAuthClient = createDesktopAuthClient(url);
                 return url;
             }
-        } catch {}
-        cloudUrlCache = null;
+            console.warn("[notty] Cloud session check failed:", res.status);
+        } catch (e) {
+            console.warn("[notty] Cloud detection failed:", e);
+        }
         return null;
     })();
 
-    return cloudCheckPromise;
+    const result = await cloudCheckPromise;
+    cloudCheckPromise = null; // don't cache failures — allow retry
+    return result;
 }
 
 export function resetCloudDetection() {
@@ -68,7 +76,9 @@ export function resetCloudDetection() {
 
 // Fire-and-forget cloud sync — never awaited, never blocks local ops
 function cloudSync(fn: (cloud: string) => void) {
-    detectCloud().then((cloud) => { if (cloud) fn(cloud); }).catch(() => {});
+    detectCloud().then((cloud) => {
+        if (cloud) fn(cloud);
+    }).catch((e) => console.warn("[notty] cloudSync error:", e));
 }
 
 export class DesktopAdapter implements NottyAdapter {
@@ -165,7 +175,7 @@ export class DesktopAdapter implements NottyAdapter {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
-            }).catch(() => {});
+            }).catch((e) => console.warn("[notty] Cloud save failed:", e));
         });
     }
 

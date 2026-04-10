@@ -258,9 +258,10 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => { cancelled = true; };
     }, [noteId, ydoc, provider, adapter]);
 
-    // Connect WS after auth
+    // Connect WS after auth (web only — desktop uses local-first sync)
     useEffect(() => {
-        if (user && ready) provider.connect();
+        const isTauri = "__TAURI_INTERNALS__" in window;
+        if (user && ready && !isTauri) provider.connect();
     }, [user, ready, provider]);
 
     // Ref so unmount cleanup always calls the latest saveNow without dep churn

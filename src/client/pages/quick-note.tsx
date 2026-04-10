@@ -111,13 +111,12 @@ export function QuickNotePage() {
             <div
                 className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border-warm)] select-none shrink-0"
                 data-tauri-drag-region
-                style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
             >
                 <span className="text-xs text-[var(--color-ink-muted)] font-serif italic">
                     quick note
                 </span>
 
-                <div className="flex items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+                <div className="flex items-center gap-1">
                     {quickNotes.length > 1 && (
                         <>
                             <button onClick={prev} className="p-1 rounded hover:bg-[var(--color-border-warm)] transition-colors" title="Previous (Cmd+[)">

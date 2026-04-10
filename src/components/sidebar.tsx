@@ -6,6 +6,8 @@ import { useAdapter } from "@/context/adapter-context";
 import { useAuth } from "@/context/auth-context";
 import { DarkModeToggle } from "./dark-mode-toggle";
 import { AuthSection } from "./auth-section";
+import { isTauri } from "@/lib/platform";
+import { useTabNavigate } from "@/context/tabs-context";
 import type { SharedNote } from "@/lib/adapter";
 
 const FOLDER_COLORS = [
@@ -15,6 +17,7 @@ const FOLDER_COLORS = [
 
 export function Sidebar() {
     const navigate = useNavigate();
+    const tabNavigate = useTabNavigate();
     const location = useLocation();
     const { folders, selectedFolderId, selectFolder, createFolder, deleteFolder, renameFolder } = useFolders();
     const { notes, trash } = useNotes();
@@ -75,8 +78,12 @@ export function Sidebar() {
 
     return (
         <aside className="w-60 h-screen flex flex-col border-r border-[var(--color-border-warm)] shrink-0 select-none transition-colors duration-300" style={{ backgroundColor: selectedFolderId ? "var(--folder-tint-sidebar, var(--color-sidebar))" : "var(--color-sidebar)" }}>
-            {/* Logo */}
-            <div className="px-5 pt-5 pb-4 flex items-center gap-2.5 border-b border-[var(--color-border-warm)]/50">
+            {/* Logo + drag region */}
+            <div
+                className="px-5 pb-4 flex items-center gap-2.5 border-b border-[var(--color-border-warm)]/50"
+                style={{ paddingTop: isTauri ? 38 : 20 }}
+                {...(isTauri ? { "data-tauri-drag-region": true } : {})}
+            >
                 <img src="/logo.png" className="w-7 h-7 rounded-lg" alt="" />
                 <span className="font-serif italic text-xl tracking-tight text-[var(--color-ink)]">notty</span>
             </div>
@@ -210,7 +217,7 @@ export function Sidebar() {
                         {sharedNotes.map((s) => (
                             <button
                                 key={s.id}
-                                onClick={() => navigate(`/note/${s.id}`)}
+                                onClick={() => tabNavigate(`/note/${s.id}`, { title: s.title || "Untitled" })}
                                 className="w-full flex items-center justify-between px-3 py-[7px] rounded-xl text-[13px] text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)]/60 transition-colors"
                             >
                                 <span className="truncate">{s.title || "Untitled"}</span>

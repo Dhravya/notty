@@ -19,7 +19,7 @@ export function SaveIndicator({ saveState }: { saveState: SaveState }) {
         sublabel = "Will sync when online";
     } else if (isTauri) {
         dotColor = saveState === "saving" ? "bg-amber-500" : "bg-emerald-500";
-        label = saveState === "saving" ? "Saving…" : "Saved locally";
+        label = saveState === "saving" ? "Saving…" : "Saved";
     } else {
         dotColor = saveState === "saving" ? "bg-amber-500" : "bg-emerald-500";
         label = saveState === "saving" ? "Saving…" : "Saved";

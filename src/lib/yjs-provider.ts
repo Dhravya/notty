@@ -13,24 +13,26 @@ export class NottyProvider {
     awareness: awarenessProtocol.Awareness;
     persistence: IndexeddbPersistence | null;
     private ws: WebSocket | null = null;
-    private connected = false;
-    private destroyed = false;
+    connected = false;
+    destroyed = false;
     private pendingUpdates: Uint8Array[] = [];
     private serverUrl: string | null = null;
     private reconnectDelay = 1000;
 
     private shareToken: string | undefined;
+    private authToken: string | undefined;
     private offlineOnly: boolean;
 
     constructor(
         private noteId: string,
         doc: Y.Doc,
-        options?: { connect?: boolean; shareToken?: string }
+        options?: { connect?: boolean; shareToken?: string; token?: string }
     ) {
         this.doc = doc;
         this.awareness = new awarenessProtocol.Awareness(doc);
         this.offlineOnly = options?.connect === false;
         this.shareToken = options?.shareToken;
+        this.authToken = options?.token;
 
         // Offline persistence — skip for shared notes (no offline use, avoids stale duplicates)
         this.persistence = options?.shareToken
@@ -61,12 +63,13 @@ export class NottyProvider {
         if (options?.connect !== false) this.connect();
     }
 
-    setServerUrl(url: string) {
+    setServerUrl(url: string, token?: string) {
         this.serverUrl = url;
+        if (token) this.authToken = token;
     }
 
     connect() {
-        if (this.destroyed) return;
+        if (this.destroyed || this.connected) return;
         this.offlineOnly = false;
         let wsUrl: string;
         if (this.serverUrl) {
@@ -74,6 +77,7 @@ export class NottyProvider {
             const host = this.serverUrl.replace(/^https?:\/\//, "");
             wsUrl = `${proto}//${host}/api/sync?noteId=${this.noteId}`;
             if (this.shareToken) wsUrl += `&share=${encodeURIComponent(this.shareToken)}`;
+            if (this.authToken) wsUrl += `&token=${encodeURIComponent(this.authToken)}`;
         } else {
             const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
             wsUrl = `${proto}//${window.location.host}/api/sync?noteId=${this.noteId}`;

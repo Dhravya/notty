@@ -94,14 +94,15 @@ async function getSession(env: Env, request: Request) {
     const stub = env.AUTH_DO.get(env.AUTH_DO.idFromName("auth-singleton"));
     const url = new URL(request.url);
     const headers = new Headers();
-    // Forward existing cookie, or inject from X-Session-Token header
+    // Forward existing cookie, or inject from X-Session-Token header / query param
     const existingCookie = request.headers.get("Cookie");
     const headerToken = request.headers.get("X-Session-Token");
+    const queryToken = url.searchParams.get("token");
     if (existingCookie) {
         headers.set("Cookie", existingCookie);
-    } else if (headerToken) {
+    } else if (headerToken || queryToken) {
         // Use __Secure- prefix since the DO request URL is https://
-        headers.set("Cookie", `__Secure-better-auth.session_token=${headerToken}`);
+        headers.set("Cookie", `__Secure-better-auth.session_token=${headerToken || queryToken}`);
     }
     const res = await stub.fetch(new Request(`${url.origin}/api/auth/get-session`, { headers }));
     if (!res.ok) return null;

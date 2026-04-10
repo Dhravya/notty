@@ -205,9 +205,9 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => clearInterval(interval);
     }, [saveNow]);
 
-    // Load: IndexedDB first (fast), then HTTP if Yjs doc is empty.
-    // We bootstrap HTTP content into the Yjs doc directly (via a temporary
-    // TipTap editor) so the Collaboration extension renders it exactly once.
+    // Load: IndexedDB + HTTP in parallel. HTTP content is authoritative —
+    // it may be newer than IndexedDB (e.g. desktop edited via HTTP while
+    // web's Yjs state was stale). We bootstrap into the Yjs doc via TipTap.
     const bootstrapRef = useRef<JSONContent | null>(null);
     useEffect(() => {
         let cancelled = false;
@@ -215,44 +215,33 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         const persistenceReady = provider.persistence
             ? provider.persistence.whenSynced
             : Promise.resolve();
-        // In compact mode (quick notes), always wait for IndexedDB — no timeout race.
-        // In normal mode, race with 150ms to avoid blocking on slow persistence.
         const waitForPersistence = compact
             ? persistenceReady
             : Promise.race([persistenceReady, new Promise((r) => setTimeout(r, 150))]);
-        waitForPersistence.then(() => {
+
+        // Shared notes get content from WebSocket sync — skip HTTP bootstrap
+        if (shareToken) {
+            waitForPersistence.then(() => { if (!cancelled) setReady(true); });
+            return () => { cancelled = true; };
+        }
+
+        // Fetch HTTP content in parallel with IndexedDB
+        const httpContent = Promise.race([
+            adapter.getNote(noteId).catch(() => null),
+            new Promise((r) => setTimeout(() => r(null), 500)),
+        ]);
+
+        Promise.all([waitForPersistence, httpContent]).then(([, data]: [any, any]) => {
             if (cancelled) return;
-
-            const hasYjsContent = ydoc.getXmlFragment("default").length > 1;
-
-            if (hasYjsContent) {
-                setReady(true);
-                return;
+            if (data?.content) {
+                try {
+                    const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
+                    if (parsed?.type === "doc" && parsed.content?.length) {
+                        bootstrapRef.current = parsed;
+                    }
+                } catch {}
             }
-
-            // Shared notes get content from WebSocket sync — skip HTTP bootstrap
-            // to avoid duplicate content (HTTP + Yjs sync create independent ops)
-            if (shareToken) {
-                setReady(true);
-                return;
-            }
-
-            // Yjs doc is empty — try to bootstrap from HTTP
-            Promise.race([
-                adapter.getNote(noteId, shareToken).catch(() => null),
-                new Promise((r) => setTimeout(() => r(null), 500)),
-            ]).then((data: any) => {
-                if (cancelled) return;
-                if (data?.content && ydoc.getXmlFragment("default").length <= 1) {
-                    try {
-                        const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
-                        if (parsed?.type === "doc" && parsed.content?.length) {
-                            bootstrapRef.current = parsed;
-                        }
-                    } catch {}
-                }
-                setReady(true);
-            });
+            setReady(true);
         });
 
         return () => { cancelled = true; };
@@ -395,7 +384,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                     }}
                     onCreate={({ editor }) => {
                         editorRef.current = editor;
-                        if (bootstrapRef.current && !editor.getText().trim()) {
+                        if (bootstrapRef.current) {
                             editor.commands.setContent(bootstrapRef.current);
                             bootstrapRef.current = null;
                         }

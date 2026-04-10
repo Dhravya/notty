@@ -322,7 +322,14 @@ export class DesktopAdapter implements NottyAdapter {
     async updateProfile(): Promise<void> { throw new Error("Profile requires cloud"); }
 
     createProvider(noteId: string, doc: Y.Doc): NottyProvider {
-        // Desktop: offline-only Yjs (IndexedDB persistence, no WebSocket)
-        return new NottyProvider(noteId, doc, { connect: false });
+        const provider = new NottyProvider(noteId, doc, { connect: false });
+        // When cloud is available, connect Yjs WebSocket for real-time sync
+        detectCloud().then((cloud) => {
+            if (cloud && !provider.destroyed && sessionTokenCache) {
+                provider.setServerUrl(cloud, sessionTokenCache);
+                provider.connect();
+            }
+        });
+        return provider;
     }
 }

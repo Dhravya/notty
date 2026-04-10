@@ -149,6 +149,7 @@ export const extensions = [
             if (node.type.name === "heading") return `Heading ${node.attrs.level}`;
             return "Press '/' for commands...";
         },
+        showOnlyCurrent: true,
     }),
     TaskList.configure({ HTMLAttributes: { class: "not-prose" } }),
     TaskItem.configure({ nested: true }),

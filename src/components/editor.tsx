@@ -205,27 +205,61 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => clearInterval(interval);
     }, [saveNow]);
 
-    // Load: IndexedDB + HTTP in parallel. Only bootstrap from HTTP when the
-    // Yjs doc is empty — setContent on a non-empty Collaboration doc creates
-    // independent Yjs ops that merge/duplicate with existing server state.
+    // Load content into the Yjs doc. Strategy varies by platform:
+    // - Web: IndexedDB + HTTP in parallel, bootstrap only when Yjs is empty
+    // - Desktop: wait for WebSocket sync from server, fall back to local if offline
+    // - Shared notes: WebSocket only (skip HTTP to avoid duplicate ops)
     const bootstrapRef = useRef<JSONContent | null>(null);
+    const isTauri = "__TAURI_INTERNALS__" in window;
     useEffect(() => {
         let cancelled = false;
 
+        // Shared notes get content from WebSocket sync — skip HTTP bootstrap
+        if (shareToken) {
+            const p = provider.persistence ? provider.persistence.whenSynced : Promise.resolve();
+            p.then(() => { if (!cancelled) setReady(true); });
+            return () => { cancelled = true; };
+        }
+
+        if (isTauri) {
+            // Desktop: Yjs doc starts empty (no IndexedDB persistence).
+            // Wait for WebSocket sync to fill it from server, with a timeout
+            // fallback to local SQLite content for offline mode.
+            const wsSync = Promise.race([
+                provider.whenSynced,
+                new Promise((r) => setTimeout(r, 2000)),
+            ]);
+            wsSync.then(() => {
+                if (cancelled) return;
+                if (ydoc.getXmlFragment("default").length > 1) {
+                    // WebSocket sync provided content — use it
+                    setReady(true);
+                    return;
+                }
+                // Offline or empty server — bootstrap from local SQLite
+                adapter.getNote(noteId).catch(() => null).then((data: any) => {
+                    if (cancelled) return;
+                    if (data?.content) {
+                        try {
+                            const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
+                            if (parsed?.type === "doc" && parsed.content?.length) {
+                                bootstrapRef.current = parsed;
+                            }
+                        } catch {}
+                    }
+                    setReady(true);
+                });
+            });
+            return () => { cancelled = true; };
+        }
+
+        // Web: IndexedDB + HTTP in parallel
         const persistenceReady = provider.persistence
             ? provider.persistence.whenSynced
             : Promise.resolve();
         const waitForPersistence = compact
             ? persistenceReady
             : Promise.race([persistenceReady, new Promise((r) => setTimeout(r, 150))]);
-
-        // Shared notes get content from WebSocket sync — skip HTTP bootstrap
-        if (shareToken) {
-            waitForPersistence.then(() => { if (!cancelled) setReady(true); });
-            return () => { cancelled = true; };
-        }
-
-        // Fetch HTTP content in parallel with IndexedDB (no added latency)
         const httpContent = Promise.race([
             adapter.getNote(noteId).catch((e) => { console.warn("[notty] HTTP bootstrap fetch failed:", e); return null; }),
             new Promise((r) => setTimeout(() => r(null), 1000)),
@@ -234,7 +268,6 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         Promise.all([waitForPersistence, httpContent]).then(([, data]: [any, any]) => {
             if (cancelled) return;
             const hasYjsContent = ydoc.getXmlFragment("default").length > 1;
-            // Only bootstrap when Yjs doc is empty to prevent CRDT duplication
             if (!hasYjsContent && data?.content) {
                 try {
                     const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
@@ -251,9 +284,8 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         return () => { cancelled = true; };
     }, [noteId, ydoc, provider, adapter]);
 
-    // Connect WS after auth (web only — desktop uses local-first sync)
+    // Connect WS after auth (web only — desktop connects via adapter)
     useEffect(() => {
-        const isTauri = "__TAURI_INTERNALS__" in window;
         if (user && ready && !isTauri) provider.connect();
     }, [user, ready, provider]);
 

@@ -322,7 +322,9 @@ export class DesktopAdapter implements NottyAdapter {
     async updateProfile(): Promise<void> { throw new Error("Profile requires cloud"); }
 
     createProvider(noteId: string, doc: Y.Doc): NottyProvider {
-        const provider = new NottyProvider(noteId, doc, { connect: false });
+        // Desktop: skip IndexedDB Yjs persistence (SQLite is the persistence layer).
+        // This prevents stale IndexedDB Yjs ops from merging with server state.
+        const provider = new NottyProvider(noteId, doc, { connect: false, skipPersistence: true });
         // When cloud is available, connect Yjs WebSocket for real-time sync
         detectCloud().then((cloud) => {
             if (cloud && !provider.destroyed && sessionTokenCache) {

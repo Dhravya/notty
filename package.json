@@ -12,8 +12,10 @@
 		"tauri:build": "tauri build"
 	},
 	"dependencies": {
+		"@anthropic-ai/sdk": "^0.91.1",
 		"@better-auth/passkey": "^1.5.6",
 		"@dotenvx/dotenvx": "^1.59.1",
+		"@pierre/trees": "^1.0.0-beta.3",
 		"@resvg/resvg-wasm": "^2.6.2",
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.2.2",
@@ -26,6 +28,7 @@
 		"@vitejs/plugin-react": "^6.0.1",
 		"better-auth": "^1.5.6",
 		"drizzle-orm": "^0.45.2",
+		"e2b": "^2.19.1",
 		"hono": "^4.12.10",
 		"jose": "^6.2.2",
 		"lucide-react": "^1.7.0",
@@ -35,6 +38,7 @@
 		"react-router": "^7.14.0",
 		"satori": "^0.26.0",
 		"sonner": "^2.0.7",
+		"supermemory": "^4.21.1",
 		"use-debounce": "^10.1.1",
 		"vaul": "^1.1.2",
 		"vite": "^8.0.3",

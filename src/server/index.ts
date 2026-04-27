@@ -6,6 +6,9 @@ import { cors } from "hono/cors";
 import { renderPublicPage, renderPublicNote } from "./public-page";
 import { renderRSS } from "./rss";
 import { generateOgImage } from "./og-image";
+import { Sandbox } from "e2b";
+import { runAgent } from "../lib/smfs-agent";
+import type { SmfsFile, AgentEvent } from "../lib/smfs-types";
 
 export { AuthDurableObject } from "../durable-objects/auth";
 export { UserNotesDurableObject } from "../durable-objects/user-notes";
@@ -192,6 +195,13 @@ function getSessionCookie(request: Request): string | null {
     return request.headers.get("X-Session-Token");
 }
 
+async function getSmfsSandbox(userStub: DurableObjectStub): Promise<string | null> {
+    const res = await userStub.fetch(new Request("https://do/smfs/config/sandbox_id"));
+    if (!res.ok) return null;
+    const data = await res.json() as { value: string };
+    return data.value;
+}
+
 // --- Auth routes — proxy to AuthDO, with token exchange for Tauri desktop ---
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname;
@@ -254,6 +264,7 @@ const requireAuth = async (c: any, next: any) => {
 app.use("/api/notes/*", requireAuth);
 app.use("/api/notes-trash", requireAuth);
 app.use("/api/folders/*", requireAuth);
+app.use("/api/smfs/*", requireAuth);
 
 // --- Notes API ---
 app.get("/api/notes", (c) => c.var.userStub.fetch(new Request("https://do/notes")));
@@ -271,9 +282,32 @@ app.post("/api/notes", async (c) => {
             }));
         }
     }
-    return c.var.userStub.fetch(new Request("https://do/notes", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: c.req.raw.body,
+    const body = await c.req.json() as any;
+    const doRes = await c.var.userStub.fetch(new Request("https://do/notes", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     }));
+
+    // Fire-and-forget sync to Supermemory
+    if (process.env.SUPERMEMORY_API_KEY && body.id && body.content) {
+        c.var.userStub.fetch(new Request(`https://do/smfs/note-for-sync/${body.id}`)).then(async (noteRes) => {
+            if (!noteRes.ok) return;
+            const note = await noteRes.json() as any;
+            fetch("https://api.supermemory.ai/v3/documents", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${process.env.SUPERMEMORY_API_KEY}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    content: note.content || "",
+                    customId: note.id,
+                    metadata: { title: note.title, source: "notty", noteId: note.id },
+                }),
+            }).catch(() => {});
+        }).catch(() => {});
+    }
+
+    return doRes;
 });
 
 app.get("/api/notes/:id", async (c) => {
@@ -780,6 +814,224 @@ app.post("/api/folders", (c) => c.var.userStub.fetch(new Request("https://do/fol
 app.delete("/api/folders/:id", (c) =>
     c.var.userStub.fetch(new Request(`https://do/folders/${c.req.param("id")}`, { method: "DELETE" }))
 );
+
+// --- SMFS API ---
+app.post("/api/smfs/sandbox", async (c) => {
+    let sandboxId = await getSmfsSandbox(c.var.userStub);
+    if (sandboxId) {
+        // Try to connect to verify it's still alive
+        try {
+            const sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+            await sandbox.files.list("/");
+            return c.json({ sandboxId });
+        } catch {
+            // Sandbox expired or dead, create a new one
+        }
+    }
+    try {
+        const sandbox = await Sandbox.create({ apiKey: process.env.E2B_API_KEY });
+        sandboxId = sandbox.sandboxId;
+        await c.var.userStub.fetch(new Request("https://do/smfs/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: "sandbox_id", value: sandboxId }),
+        }));
+        return c.json({ sandboxId });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Failed to create sandbox" }, 500);
+    }
+});
+
+app.get("/api/smfs/files", async (c) => {
+    const sandboxId = await getSmfsSandbox(c.var.userStub);
+    if (!sandboxId) return c.json({ error: "No sandbox" }, 400);
+    try {
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        const path = c.req.query("path") || "/home/user";
+        const entries = await sandbox.files.list(path);
+        const files: SmfsFile[] = entries.map((e: any) => ({
+            name: e.name,
+            path: e.path || `${path}/${e.name}`.replace(/\/\//g, "/"),
+            type: e.type === "dir" ? "directory" as const : "file" as const,
+            size: e.size,
+        }));
+        return c.json({ files });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Failed to list files" }, 500);
+    }
+});
+
+app.get("/api/smfs/file", async (c) => {
+    const sandboxId = await getSmfsSandbox(c.var.userStub);
+    if (!sandboxId) return c.json({ error: "No sandbox" }, 400);
+    const path = c.req.query("path");
+    if (!path) return c.json({ error: "path required" }, 400);
+    try {
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        const content = await sandbox.files.read(path);
+        return c.json({ content, path });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Failed to read file" }, 500);
+    }
+});
+
+app.post("/api/smfs/file", async (c) => {
+    const sandboxId = await getSmfsSandbox(c.var.userStub);
+    if (!sandboxId) return c.json({ error: "No sandbox" }, 400);
+    const { path, content } = await c.req.json() as { path: string; content: string };
+    if (!path) return c.json({ error: "path required" }, 400);
+    try {
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        await sandbox.files.write(path, content);
+        return c.json({ ok: true });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Failed to write file" }, 500);
+    }
+});
+
+app.delete("/api/smfs/file", async (c) => {
+    const sandboxId = await getSmfsSandbox(c.var.userStub);
+    if (!sandboxId) return c.json({ error: "No sandbox" }, 400);
+    const path = c.req.query("path");
+    if (!path) return c.json({ error: "path required" }, 400);
+    try {
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        await sandbox.commands.run(`rm -rf "${path}"`);
+        return c.json({ ok: true });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Failed to delete" }, 500);
+    }
+});
+
+app.post("/api/smfs/folder", async (c) => {
+    const sandboxId = await getSmfsSandbox(c.var.userStub);
+    if (!sandboxId) return c.json({ error: "No sandbox" }, 400);
+    const { path } = await c.req.json() as { path: string };
+    if (!path) return c.json({ error: "path required" }, 400);
+    try {
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        await sandbox.commands.run(`mkdir -p "${path}"`);
+        return c.json({ ok: true });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Failed to create folder" }, 500);
+    }
+});
+
+app.post("/api/smfs/sync", async (c) => {
+    const apiKey = process.env.SUPERMEMORY_API_KEY;
+    if (!apiKey) return c.json({ error: "SUPERMEMORY_API_KEY not configured" }, 500);
+    try {
+        const notesRes = await c.var.userStub.fetch(new Request("https://do/smfs/notes-for-sync"));
+        const notes = await notesRes.json() as Array<{ id: string; title: string; content: string }>;
+        let synced = 0;
+        let errors = 0;
+        for (const note of notes) {
+            try {
+                const res = await fetch("https://api.supermemory.ai/v3/documents", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        content: note.content || "",
+                        customId: note.id,
+                        metadata: { title: note.title, source: "notty", noteId: note.id },
+                    }),
+                });
+                if (res.ok) synced++;
+                else errors++;
+            } catch {
+                errors++;
+            }
+        }
+        return c.json({ synced, errors, total: notes.length });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Sync failed" }, 500);
+    }
+});
+
+app.post("/api/smfs/sync-note", async (c) => {
+    const apiKey = process.env.SUPERMEMORY_API_KEY;
+    if (!apiKey) return c.json({ error: "SUPERMEMORY_API_KEY not configured" }, 500);
+    const { noteId } = await c.req.json() as { noteId: string };
+    if (!noteId) return c.json({ error: "noteId required" }, 400);
+    try {
+        const noteRes = await c.var.userStub.fetch(new Request(`https://do/smfs/note-for-sync/${noteId}`));
+        if (!noteRes.ok) return c.json({ error: "Note not found" }, 404);
+        const note = await noteRes.json() as { id: string; title: string; content: string };
+        await fetch("https://api.supermemory.ai/v3/documents", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                content: note.content || "",
+                customId: note.id,
+                metadata: { title: note.title, source: "notty", noteId: note.id },
+            }),
+        });
+        return c.json({ ok: true });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Sync failed" }, 500);
+    }
+});
+
+app.post("/api/smfs/agent", async (c) => {
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) return c.json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
+    const sandboxId = await getSmfsSandbox(c.var.userStub);
+    if (!sandboxId) return c.json({ error: "No sandbox. Initialize one first." }, 400);
+
+    const { message, conversationHistory } = await c.req.json() as {
+        message: string;
+        conversationHistory?: Array<{ role: "user" | "assistant"; content: any }>;
+    };
+
+    try {
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        const executeBash = async (command: string): Promise<string> => {
+            const result = await sandbox.commands.run(command, { timeoutMs: 30000 });
+            return (result.stdout || "") + (result.stderr ? `\n${result.stderr}` : "");
+        };
+
+        const { readable, writable } = new TransformStream();
+        const writer = writable.getWriter();
+        const encoder = new TextEncoder();
+
+        const writeEvent = (event: AgentEvent) => {
+            writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)).catch(() => {});
+        };
+
+        // Run agent in background, close stream when done
+        runAgent({
+            message,
+            conversationHistory: conversationHistory || [],
+            anthropicApiKey: anthropicKey,
+            executeBash,
+            onEvent: (event) => {
+                writeEvent(event);
+                if (event.type === "done" || event.type === "error") {
+                    writer.close().catch(() => {});
+                }
+            },
+        }).catch((err) => {
+            writeEvent({ type: "error", message: err?.message || "Agent error" });
+            writer.close().catch(() => {});
+        });
+
+        return new Response(readable, {
+            headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        });
+    } catch (err: any) {
+        return c.json({ error: err?.message || "Agent failed" }, 500);
+    }
+});
 
 // --- WebSocket sync ---
 app.get("/api/sync", async (c) => {

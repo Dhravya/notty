@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useSmfs } from "@/context/smfs-context";
 import { SmfsChat } from "./smfs-chat";
 import { useFileTree, useFileTreeSelection, FileTree } from "@pierre/trees/react";
@@ -37,6 +37,16 @@ export function SmfsPanel() {
 
     // Also track selection via hook for reactivity
     useFileTreeSelection(model);
+
+    // useFileTree creates the model once and ignores later option changes,
+    // so we must call resetPaths when the file list changes.
+    const prevFilesRef = useRef(smfs.files);
+    useEffect(() => {
+        if (prevFilesRef.current !== smfs.files) {
+            prevFilesRef.current = smfs.files;
+            model.resetPaths(smfs.files);
+        }
+    }, [smfs.files, model]);
 
     if (!smfs.sandboxReady) {
         return (

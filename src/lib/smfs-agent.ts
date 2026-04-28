@@ -1,7 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AgentEvent } from "./smfs-types";
 
-const SYSTEM_PROMPT = `You are an AI assistant integrated into Notty, a note-taking app. You have access to the user's virtual filesystem through a bash tool. You can run any shell command — ls, cat, mkdir, touch, rm, grep, find, echo, etc. The user's notes from Notty have been synced to Supermemory for semantic search. Help the user organize files, find information, and manage their workspace. Be concise and helpful.`;
+const MODEL = "claude-sonnet-4-20250514";
+const MAX_TOKENS = 4096;
+
+const SYSTEM_PROMPT = `You are an AI assistant integrated into Notty, a note-taking app. You have access to the user's virtual filesystem through a bash tool. You can run any shell command — ls, cat, mkdir, touch, rm, grep, find, echo, etc. The user's notes from Notty have been synced to Supermemory for semantic search. Use the search_notes tool to find information from the user's notes when they ask about their note content. Help the user organize files, find information, and manage their workspace. Be concise and helpful.`;
 
 const BASH_TOOL: Anthropic.Tool = {
   name: "bash",
@@ -15,10 +18,23 @@ const BASH_TOOL: Anthropic.Tool = {
   }
 };
 
+const SEARCH_NOTES_TOOL: Anthropic.Tool = {
+  name: "search_notes",
+  description: "Semantically search the user's synced Notty notes. Use this when the user asks about their notes, wants to find something they wrote, or needs to recall information from their note-taking history.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      query: { type: "string", description: "The search query to find relevant notes" }
+    },
+    required: ["query"]
+  }
+};
+
 export async function runAgent(params: {
   message: string;
-  conversationHistory: Array<{ role: "user" | "assistant"; content: any }>;
+  conversationHistory: Anthropic.MessageParam[];
   anthropicApiKey: string;
+  supermemoryApiKey: string | null;
   executeBash: (command: string) => Promise<string>;
   onEvent: (event: AgentEvent) => void;
 }): Promise<void> {
@@ -28,26 +44,31 @@ export async function runAgent(params: {
     { role: "user", content: params.message }
   ];
 
+  const tools: Anthropic.Tool[] = [BASH_TOOL];
+  if (params.supermemoryApiKey) {
+    tools.push(SEARCH_NOTES_TOOL);
+  }
+
   let continueLoop = true;
   while (continueLoop) {
     try {
       const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
         system: SYSTEM_PROMPT,
-        tools: [BASH_TOOL],
+        tools,
         messages,
       });
 
       // Collect tool_use blocks for appending to messages
-      const toolUseBlocks: Array<{ id: string; name: string; input: any }> = [];
+      const toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
 
       for (const block of response.content) {
         if (block.type === "text") {
           params.onEvent({ type: "text", content: block.text });
         } else if (block.type === "tool_use") {
           params.onEvent({ type: "tool_use", name: block.name, input: block.input as Record<string, unknown> });
-          toolUseBlocks.push({ id: block.id, name: block.name, input: block.input });
+          toolUseBlocks.push({ id: block.id, name: block.name, input: block.input as Record<string, unknown> });
         }
       }
 
@@ -60,15 +81,20 @@ export async function runAgent(params: {
         const toolResults: Anthropic.ToolResultBlockParam[] = [];
         for (const tool of toolUseBlocks) {
           try {
-            const result = await params.executeBash((tool.input as { command: string }).command);
+            let result: string;
+            if (tool.name === "search_notes" && params.supermemoryApiKey) {
+              result = await searchNotes(tool.input.query as string, params.supermemoryApiKey);
+            } else {
+              result = await params.executeBash(tool.input.command as string);
+            }
             params.onEvent({ type: "tool_result", name: tool.name, result });
             toolResults.push({
               type: "tool_result",
               tool_use_id: tool.id,
               content: result || "(no output)",
             });
-          } catch (err: any) {
-            const errorMsg = err?.message || String(err);
+          } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
             params.onEvent({ type: "tool_result", name: tool.name, result: `Error: ${errorMsg}` });
             toolResults.push({
               type: "tool_result",
@@ -84,11 +110,39 @@ export async function runAgent(params: {
       }
 
       continueLoop = response.stop_reason === "tool_use";
-    } catch (err: any) {
-      params.onEvent({ type: "error", message: err?.message || String(err) });
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      params.onEvent({ type: "error", message: errorMsg });
       continueLoop = false;
+      // Do not emit "done" after an error — the error event signals end-of-session
+      return;
     }
   }
 
   params.onEvent({ type: "done" });
+}
+
+async function searchNotes(query: string, apiKey: string): Promise<string> {
+  const res = await fetch("https://api.supermemory.ai/v3/search", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ q: query, limit: 5 }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return `Search failed (HTTP ${res.status}): ${text}`;
+  }
+  const data = await res.json() as { results?: Array<{ content?: string; metadata?: Record<string, unknown> }> };
+  if (!data.results || data.results.length === 0) {
+    return "No matching notes found.";
+  }
+  return data.results
+    .map((r, i) => {
+      const title = (r.metadata?.title as string | undefined) || "Untitled";
+      return `[${i + 1}] ${title}\n${r.content || ""}`;
+    })
+    .join("\n\n---\n\n");
 }

@@ -287,7 +287,7 @@ export function Sidebar() {
             )}
 
             {/* SMFS Section - only for authenticated non-anonymous users */}
-            {user && !(user as any).isAnonymous && (
+            {user && !user.isAnonymous && (
                 <div className="px-3">
                     <SmfsSection />
                 </div>
@@ -295,7 +295,7 @@ export function Sidebar() {
 
             {/* Auth + Bottom */}
             <AuthSection />
-            {user && !(user as any).isAnonymous && (
+            {user && !user.isAnonymous && (
                 <div className="px-4 py-3 border-t border-[var(--color-border-warm)]/50 space-y-2">
                     <button
                         onClick={() => navigate("/settings/public")}

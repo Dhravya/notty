@@ -1,6 +1,11 @@
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 
+/** Ensure a relative path is prefixed with /home/user */
+function toFullPath(path: string): string {
+    return path.startsWith("/") ? path : `/home/user/${path}`;
+}
+
 type AgentMessage = {
     id: string;
     role: "user" | "assistant";
@@ -71,26 +76,29 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
     const refreshFiles = useCallback(async () => {
         setLoading(true);
         try {
-            // Recursively fetch all files
+            // Recursively fetch files up to a depth limit
+            const MAX_DEPTH = 3;
             const allPaths: string[] = [];
-            const fetchDir = async (dirPath: string) => {
+            const fetchDir = async (dirPath: string, depth: number) => {
+                if (depth > MAX_DEPTH) return;
                 const res = await fetch(`/api/smfs/files?path=${encodeURIComponent(dirPath)}`, { credentials: "include" });
                 if (!res.ok) return;
                 const data = await res.json() as { files: Array<{ name: string; path: string; type: string }> };
+                const subdirs: string[] = [];
                 for (const f of data.files) {
-                    // Skip hidden files/dirs
                     if (f.name.startsWith(".")) continue;
                     const fullPath = f.path.startsWith("/") ? f.path : `${dirPath}/${f.name}`.replace(/\/\//g, "/");
                     if (f.type === "directory") {
                         allPaths.push(fullPath + "/");
-                        // Only recurse one level deep to avoid too many requests
-                        // The tree component handles expansion
+                        subdirs.push(fullPath);
                     } else {
                         allPaths.push(fullPath);
                     }
                 }
+                // Recurse into subdirectories in parallel
+                await Promise.all(subdirs.map(d => fetchDir(d, depth + 1)));
             };
-            await fetchDir("/home/user");
+            await fetchDir("/home/user", 0);
             setFiles(allPaths.map(p => p.replace(/^\/home\/user\/?/, "") || "/").filter(p => p !== "/"));
         } catch (err: any) {
             toast.error(`Failed to list files: ${err.message}`);
@@ -100,7 +108,7 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const readFile = useCallback(async (path: string): Promise<string> => {
-        const fullPath = path.startsWith("/") ? path : `/home/user/${path}`;
+        const fullPath = toFullPath(path);
         const res = await fetch(`/api/smfs/file?path=${encodeURIComponent(fullPath)}`, { credentials: "include" });
         if (!res.ok) throw new Error("Failed to read file");
         const data = await res.json() as { content: string };
@@ -108,7 +116,7 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const writeFile = useCallback(async (path: string, content: string) => {
-        const fullPath = path.startsWith("/") ? path : `/home/user/${path}`;
+        const fullPath = toFullPath(path);
         const res = await fetch("/api/smfs/file", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -120,7 +128,7 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
     }, [refreshFiles]);
 
     const deleteFile = useCallback(async (path: string) => {
-        const fullPath = path.startsWith("/") ? path : `/home/user/${path}`;
+        const fullPath = toFullPath(path);
         const res = await fetch(`/api/smfs/file?path=${encodeURIComponent(fullPath)}`, {
             method: "DELETE",
             credentials: "include",
@@ -130,7 +138,7 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
     }, [refreshFiles]);
 
     const createFolder = useCallback(async (path: string) => {
-        const fullPath = path.startsWith("/") ? path : `/home/user/${path}`;
+        const fullPath = toFullPath(path);
         const res = await fetch("/api/smfs/folder", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

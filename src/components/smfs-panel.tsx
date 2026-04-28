@@ -48,6 +48,25 @@ export function SmfsPanel() {
     }, [files, model]);
 
     if (!smfs.sandboxReady) {
+        if (smfs.sandboxInitFailed) {
+            return (
+                <div className="flex flex-col items-center justify-center py-8 px-3 text-center gap-2">
+                    <span className="text-[12px]" style={{ color: "var(--color-ink-muted)" }}>
+                        Sandbox unavailable.
+                    </span>
+                    <button
+                        onClick={() => smfs.initSandbox().then(() => smfs.refreshFiles())}
+                        className="text-[12px] px-2 py-1 rounded-md transition-colors"
+                        style={{
+                            color: "var(--color-ink)",
+                            background: "var(--color-sidebar-active)",
+                        }}
+                    >
+                        Retry
+                    </button>
+                </div>
+            );
+        }
         return (
             <div className="flex flex-col items-center justify-center py-8 px-3">
                 <svg className="animate-spin h-5 w-5 mb-2" viewBox="0 0 24 24" fill="none" style={{ color: "var(--color-ink-muted)" }}>

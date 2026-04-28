@@ -15,6 +15,10 @@ interface Env {
     APPLE_APP_BUNDLE_IDENTIFIER?: string;
     BASE_DOMAIN?: string;
     ASSETS: Fetcher;
+    // SMFS (Supermemory Filesystem) integration secrets
+    E2B_API_KEY?: string;
+    SUPERMEMORY_API_KEY?: string;
+    ANTHROPIC_API_KEY?: string;
 }
 
 declare namespace Cloudflare {

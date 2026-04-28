@@ -83,7 +83,7 @@ export async function runAgent(params: {
           params.onEvent({ type: "text", content: block.text });
         } else if (block.type === "tool_use") {
           const input = block.input as AgentToolInput;
-          params.onEvent({ type: "tool_use", name: block.name, input: input as Record<string, unknown> });
+          params.onEvent({ type: "tool_use", id: block.id, name: block.name, input: input as Record<string, unknown> });
           toolUseBlocks.push({ id: block.id, name: block.name, input });
         }
       }
@@ -103,7 +103,7 @@ export async function runAgent(params: {
             } else {
               result = await params.executeBash(tool.input.command ?? "");
             }
-            params.onEvent({ type: "tool_result", name: tool.name, result });
+            params.onEvent({ type: "tool_result", tool_use_id: tool.id, name: tool.name, result });
             toolResults.push({
               type: "tool_result",
               tool_use_id: tool.id,
@@ -111,7 +111,7 @@ export async function runAgent(params: {
             });
           } catch (err: unknown) {
             const errorMsg = errMsg(err);
-            params.onEvent({ type: "tool_result", name: tool.name, result: `Error: ${errorMsg}` });
+            params.onEvent({ type: "tool_result", tool_use_id: tool.id, name: tool.name, result: `Error: ${errorMsg}` });
             toolResults.push({
               type: "tool_result",
               tool_use_id: tool.id,
@@ -123,6 +123,12 @@ export async function runAgent(params: {
 
         // Add tool results as a user message
         messages.push({ role: "user", content: toolResults });
+
+        // Signal the client to flush this assistant+tool_result pair into
+        // its raw history before the next loop iteration begins.  Without
+        // this marker the client would merge all iterations' blocks into one
+        // flat array, producing invalid non-alternating Anthropic history.
+        params.onEvent({ type: "loop_turn" });
       }
 
       continueLoop = response.stop_reason === "tool_use";

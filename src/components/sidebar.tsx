@@ -7,7 +7,6 @@ import { useAuth } from "@/context/auth-context";
 import { useSmfs } from "@/context/smfs-context";
 import { DarkModeToggle } from "./dark-mode-toggle";
 import { AuthSection } from "./auth-section";
-import { SmfsPanel } from "./smfs-panel";
 import { isTauri } from "@/lib/platform";
 import { useTabNavigate } from "@/context/tabs-context";
 import type { SharedNote } from "@/lib/adapter";
@@ -54,7 +53,6 @@ function SmfsSection() {
                     <polyline points="6 9 12 15 18 9" />
                 </svg>
             </button>
-            {smfs.isOpen && <SmfsPanel />}
         </div>
     );
 }

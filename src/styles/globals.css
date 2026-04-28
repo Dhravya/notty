@@ -245,3 +245,33 @@ body::before {
     to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 .animate-in-up { animation: in-up 0.3s ease-out; }
+
+/* SMFS Right Panel */
+.smfs-panel {
+  width: 400px;
+  flex-shrink: 0;
+  animation: smfs-slide-in 0.2s ease-out;
+}
+
+@keyframes smfs-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* SMFS typing dots animation */
+.smfs-dot-1, .smfs-dot-2, .smfs-dot-3 {
+  animation: smfs-bounce 1.4s ease-in-out infinite;
+}
+.smfs-dot-2 { animation-delay: 0.2s; }
+.smfs-dot-3 { animation-delay: 0.4s; }
+
+@keyframes smfs-bounce {
+  0%, 60%, 100% { opacity: 0.4; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}

@@ -1,8 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AgentEvent } from "./smfs-types";
+import { userContainerTag } from "./supermemory";
 
 const MODEL = "claude-sonnet-4-20250514";
 const MAX_TOKENS = 4096;
+
+/** Maximum number of notes returned for a single Supermemory search. */
+const SEARCH_RESULT_LIMIT = 5;
 
 const SYSTEM_PROMPT = `You are an AI assistant integrated into Notty, a note-taking app. You have access to the user's virtual filesystem through a bash tool. You can run any shell command — ls, cat, mkdir, touch, rm, grep, find, echo, etc. The user's notes from Notty have been synced to Supermemory for semantic search. Use the search_notes tool to find information from the user's notes when they ask about their note content. Help the user organize files, find information, and manage their workspace. Be concise and helpful.`;
 
@@ -30,11 +34,22 @@ const SEARCH_NOTES_TOOL: Anthropic.Tool = {
   }
 };
 
+/** Narrow shape for the input field on the tools we know about. */
+type AgentToolInput = { command?: string; query?: string };
+
+const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 export async function runAgent(params: {
   message: string;
   conversationHistory: Anthropic.MessageParam[];
   anthropicApiKey: string;
   supermemoryApiKey: string | null;
+  /**
+   * The Notty user ID whose notes the agent is allowed to search. Required for
+   * search to be enabled — uploads and searches are scoped per-user via
+   * Supermemory containerTags so users can never see each other's notes.
+   */
+  userId: string;
   executeBash: (command: string) => Promise<string>;
   onEvent: (event: AgentEvent) => void;
 }): Promise<void> {
@@ -61,14 +76,15 @@ export async function runAgent(params: {
       });
 
       // Collect tool_use blocks for appending to messages
-      const toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+      const toolUseBlocks: Array<{ id: string; name: string; input: AgentToolInput }> = [];
 
       for (const block of response.content) {
         if (block.type === "text") {
           params.onEvent({ type: "text", content: block.text });
         } else if (block.type === "tool_use") {
-          params.onEvent({ type: "tool_use", name: block.name, input: block.input as Record<string, unknown> });
-          toolUseBlocks.push({ id: block.id, name: block.name, input: block.input as Record<string, unknown> });
+          const input = block.input as AgentToolInput;
+          params.onEvent({ type: "tool_use", name: block.name, input: input as Record<string, unknown> });
+          toolUseBlocks.push({ id: block.id, name: block.name, input });
         }
       }
 
@@ -83,9 +99,9 @@ export async function runAgent(params: {
           try {
             let result: string;
             if (tool.name === "search_notes" && params.supermemoryApiKey) {
-              result = await searchNotes(tool.input.query as string, params.supermemoryApiKey);
+              result = await searchNotes(tool.input.query ?? "", params.supermemoryApiKey, params.userId);
             } else {
-              result = await params.executeBash(tool.input.command as string);
+              result = await params.executeBash(tool.input.command ?? "");
             }
             params.onEvent({ type: "tool_result", name: tool.name, result });
             toolResults.push({
@@ -94,7 +110,7 @@ export async function runAgent(params: {
               content: result || "(no output)",
             });
           } catch (err: unknown) {
-            const errorMsg = err instanceof Error ? err.message : String(err);
+            const errorMsg = errMsg(err);
             params.onEvent({ type: "tool_result", name: tool.name, result: `Error: ${errorMsg}` });
             toolResults.push({
               type: "tool_result",
@@ -111,8 +127,7 @@ export async function runAgent(params: {
 
       continueLoop = response.stop_reason === "tool_use";
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      params.onEvent({ type: "error", message: errorMsg });
+      params.onEvent({ type: "error", message: errMsg(err) });
       continueLoop = false;
       // Do not emit "done" after an error — the error event signals end-of-session
       return;
@@ -122,14 +137,20 @@ export async function runAgent(params: {
   params.onEvent({ type: "done" });
 }
 
-async function searchNotes(query: string, apiKey: string): Promise<string> {
+async function searchNotes(query: string, apiKey: string, userId: string): Promise<string> {
+  // Always scope the search to this user's containerTag so results from other
+  // users in the same Supermemory account never leak into responses.
   const res = await fetch("https://api.supermemory.ai/v3/search", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ q: query, limit: 5 }),
+    body: JSON.stringify({
+      q: query,
+      limit: SEARCH_RESULT_LIMIT,
+      containerTags: [userContainerTag(userId)],
+    }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");

@@ -1,10 +1,33 @@
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 
-/** Ensure a relative path is prefixed with /home/user */
+/** All sandbox paths live under this user home. */
+const SANDBOX_HOME = "/home/user";
+/** Maximum directory depth refreshFiles will traverse. */
+const MAX_TREE_DEPTH = 3;
+
+/**
+ * Ensure a relative path is prefixed with the sandbox home. Inputs starting
+ * with `/` are assumed to already be absolute sandbox paths and are returned
+ * as-is — this means an absolute path outside `/home/user` will silently pass
+ * through. The server-side `isSafeSandboxPath` check is the source of truth
+ * for rejecting paths that escape the sandbox.
+ */
 function toFullPath(path: string): string {
-    return path.startsWith("/") ? path : `/home/user/${path}`;
+    return path.startsWith("/") ? path : `${SANDBOX_HOME}/${path}`;
 }
+
+/** Join a parent directory and a child name, collapsing any `//`. */
+function joinPath(parent: string, name: string): string {
+    return `${parent}/${name}`.replace(/\/{2,}/g, "/");
+}
+
+/** Strip the sandbox home prefix to make a path display-friendly for the tree. */
+function stripUserHome(path: string): string {
+    return path.replace(new RegExp(`^${SANDBOX_HOME}/?`), "");
+}
+
+const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 type AgentMessage = {
     id: string;
@@ -55,6 +78,19 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
     const [selectedFileContent, setSelectedFileContent] = useState<string | null>(null);
     const initializingRef = useRef(false);
 
+    // Mirror of `messages` for use inside callbacks that should not be
+    // re-created on every message update (e.g. sendMessage). Reading from
+    // this ref keeps sendMessage stable across renders so consumers can use
+    // it as a stable dep without churn.
+    const messagesRef = useRef<AgentMessage[]>([]);
+    const updateMessages = useCallback((updater: (prev: AgentMessage[]) => AgentMessage[]) => {
+        setMessages(prev => {
+            const next = updater(prev);
+            messagesRef.current = next;
+            return next;
+        });
+    }, []);
+
     const initSandbox = useCallback(async () => {
         if (sandboxReady || initializingRef.current) return;
         initializingRef.current = true;
@@ -64,10 +100,10 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
                 setSandboxReady(true);
             } else {
                 const data = await res.json().catch(() => ({}));
-                toast.error(`Failed to initialize sandbox: ${(data as any).error || "Unknown error"}`);
+                toast.error(`Failed to initialize sandbox: ${(data as { error?: string }).error || "Unknown error"}`);
             }
-        } catch (err: any) {
-            toast.error(`Sandbox error: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Sandbox error: ${errMsg(err)}`);
         } finally {
             initializingRef.current = false;
         }
@@ -76,18 +112,16 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
     const refreshFiles = useCallback(async () => {
         setLoading(true);
         try {
-            // Recursively fetch files up to a depth limit
-            const MAX_DEPTH = 3;
             const allPaths: string[] = [];
             const fetchDir = async (dirPath: string, depth: number) => {
-                if (depth > MAX_DEPTH) return;
+                if (depth > MAX_TREE_DEPTH) return;
                 const res = await fetch(`/api/smfs/files?path=${encodeURIComponent(dirPath)}`, { credentials: "include" });
                 if (!res.ok) return;
                 const data = await res.json() as { files: Array<{ name: string; path: string; type: string }> };
                 const subdirs: string[] = [];
                 for (const f of data.files) {
                     if (f.name.startsWith(".")) continue;
-                    const fullPath = f.path.startsWith("/") ? f.path : `${dirPath}/${f.name}`.replace(/\/\//g, "/");
+                    const fullPath = f.path.startsWith("/") ? f.path : joinPath(dirPath, f.name);
                     if (f.type === "directory") {
                         allPaths.push(fullPath + "/");
                         subdirs.push(fullPath);
@@ -98,10 +132,10 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
                 // Recurse into subdirectories in parallel
                 await Promise.all(subdirs.map(d => fetchDir(d, depth + 1)));
             };
-            await fetchDir("/home/user", 0);
-            setFiles(allPaths.map(p => p.replace(/^\/home\/user\/?/, "") || "/").filter(p => p !== "/"));
-        } catch (err: any) {
-            toast.error(`Failed to list files: ${err.message}`);
+            await fetchDir(SANDBOX_HOME, 0);
+            setFiles(allPaths.map(p => stripUserHome(p) || "/").filter(p => p !== "/"));
+        } catch (err: unknown) {
+            toast.error(`Failed to list files: ${errMsg(err)}`);
         } finally {
             setLoading(false);
         }
@@ -159,8 +193,8 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
             } else {
                 toast.error("Failed to sync notes");
             }
-        } catch (err: any) {
-            toast.error(`Sync error: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Sync error: ${errMsg(err)}`);
         } finally {
             setSyncing(false);
         }
@@ -172,12 +206,13 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
             role: "user",
             content: message,
         };
-        setMessages(prev => [...prev, userMsg]);
+        updateMessages(prev => [...prev, userMsg]);
         setAgentLoading(true);
 
         try {
-            // Build conversation history from existing messages
-            const history = messages.map(m => ({
+            // Build conversation history from the current messages snapshot.
+            // Read from the ref so this callback stays stable across renders.
+            const history = messagesRef.current.map(m => ({
                 role: m.role as "user" | "assistant",
                 content: m.content,
             }));
@@ -191,7 +226,7 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
 
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ error: "Unknown error" }));
-                toast.error(`Agent error: ${(err as any).error}`);
+                toast.error(`Agent error: ${(err as { error?: string }).error}`);
                 setAgentLoading(false);
                 return;
             }
@@ -209,6 +244,25 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
 
             const assistantMsgId = crypto.randomUUID();
 
+            // Single helper for the "find existing assistant message, update
+            // or append" pattern shared by `text` and `tool_use` events.
+            const upsertAssistant = (content: string, calls: typeof toolCalls) => {
+                const snapshot = [...calls];
+                updateMessages(prev => {
+                    if (prev.some(m => m.id === assistantMsgId)) {
+                        return prev.map(m =>
+                            m.id === assistantMsgId
+                                ? { ...m, content, toolCalls: snapshot }
+                                : m
+                        );
+                    }
+                    return [
+                        ...prev,
+                        { id: assistantMsgId, role: "assistant" as const, content, toolCalls: snapshot },
+                    ];
+                });
+            };
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -223,27 +277,16 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
                         const event = JSON.parse(line.slice(6));
                         if (event.type === "text") {
                             assistantContent += event.content;
-                            setMessages(prev => {
-                                const existing = prev.find(m => m.id === assistantMsgId);
-                                if (existing) {
-                                    return prev.map(m => m.id === assistantMsgId ? { ...m, content: assistantContent, toolCalls: [...toolCalls] } : m);
-                                }
-                                return [...prev, { id: assistantMsgId, role: "assistant" as const, content: assistantContent, toolCalls: [...toolCalls] }];
-                            });
+                            upsertAssistant(assistantContent, toolCalls);
                         } else if (event.type === "tool_use") {
                             toolCalls.push({ name: event.name, input: event.input });
-                            setMessages(prev => {
-                                const existing = prev.find(m => m.id === assistantMsgId);
-                                if (existing) {
-                                    return prev.map(m => m.id === assistantMsgId ? { ...m, content: assistantContent, toolCalls: [...toolCalls] } : m);
-                                }
-                                return [...prev, { id: assistantMsgId, role: "assistant" as const, content: assistantContent, toolCalls: [...toolCalls] }];
-                            });
+                            upsertAssistant(assistantContent, toolCalls);
                         } else if (event.type === "tool_result") {
                             const lastTool = toolCalls[toolCalls.length - 1];
                             if (lastTool) lastTool.result = event.result;
-                            setMessages(prev =>
-                                prev.map(m => m.id === assistantMsgId ? { ...m, toolCalls: [...toolCalls] } : m)
+                            const snapshot = [...toolCalls];
+                            updateMessages(prev =>
+                                prev.map(m => m.id === assistantMsgId ? { ...m, toolCalls: snapshot } : m)
                             );
                         } else if (event.type === "done") {
                             // Refresh files after agent is done (it may have modified the filesystem)
@@ -254,12 +297,12 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
                     } catch {}
                 }
             }
-        } catch (err: any) {
-            toast.error(`Agent error: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Agent error: ${errMsg(err)}`);
         } finally {
             setAgentLoading(false);
         }
-    }, [messages, refreshFiles]);
+    }, [updateMessages, refreshFiles]);
 
     const selectFile = useCallback(async (path: string | null) => {
         setSelectedFile(path);

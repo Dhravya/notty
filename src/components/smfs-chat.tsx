@@ -37,10 +37,13 @@ export function SmfsChat() {
                                 {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                                 {msg.toolCalls && msg.toolCalls.length > 0 && (
                                     <div className="mt-1 space-y-1">
-                                        {msg.toolCalls.map((tc, i) => (
+                                        {msg.toolCalls.map((tc, i) => {
+                                            const input = tc.input as { command?: string; query?: string };
+                                            const label = input.command ?? input.query ?? tc.name;
+                                            return (
                                             <details key={i} className="text-[11px]" style={{ color: "var(--color-ink-muted)" }}>
                                                 <summary className="cursor-pointer hover:underline">
-                                                    $ {(tc.input as any)?.command || tc.name}
+                                                    $ {label}
                                                 </summary>
                                                 {tc.result && (
                                                     <pre
@@ -51,7 +54,8 @@ export function SmfsChat() {
                                                     </pre>
                                                 )}
                                             </details>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>

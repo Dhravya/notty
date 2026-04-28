@@ -138,6 +138,11 @@ export class UserNotesDurableObject extends DurableObject {
             `);
             migrate("ALTER TABLE media ADD COLUMN caption TEXT");
 
+            // Generic key/value table for SMFS settings on this user. Today
+            // we only store `sandbox_id`, but this is structured as a kv
+            // table (rather than a column on a singleton row) so adding new
+            // settings (e.g. agent prefs, last-seen versions) doesn't require
+            // a schema migration each time.
             this.sql.exec(`
                 CREATE TABLE IF NOT EXISTS smfs_config (
                     key TEXT PRIMARY KEY,

@@ -1,52 +1,51 @@
 import { useEffect, useCallback, useRef } from "react";
 import { useSmfs } from "@/context/smfs-context";
 import { SmfsChat } from "./smfs-chat";
-import { useFileTree, useFileTreeSelection, FileTree } from "@pierre/trees/react";
+import { useFileTree, FileTree } from "@pierre/trees/react";
 
 export function SmfsPanel() {
     const smfs = useSmfs();
+    // Pull stable callbacks out of the context object so we can list them as
+    // explicit effect deps (instead of disabling the lint rule).
+    const { sandboxReady, initSandbox, refreshFiles, files, selectFile } = smfs;
 
-    // Initialize sandbox and load files on mount
+    // Initialize sandbox and load files on mount.
     useEffect(() => {
-        if (!smfs.sandboxReady) {
-            smfs.initSandbox().then(() => {
-                smfs.refreshFiles();
+        if (!sandboxReady) {
+            initSandbox().then(() => {
+                refreshFiles();
             });
         } else {
-            smfs.refreshFiles();
+            refreshFiles();
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [smfs.sandboxReady]);
+    }, [sandboxReady, initSandbox, refreshFiles]);
 
     const handleSelectionChange = useCallback((selectedPaths: readonly string[]) => {
         if (selectedPaths.length > 0) {
             const path = selectedPaths[0];
             // Only select files, not directories
             if (!path.endsWith("/")) {
-                smfs.selectFile(path);
+                selectFile(path);
             }
         }
-    }, [smfs.selectFile]);
+    }, [selectFile]);
 
     const { model } = useFileTree({
-        paths: smfs.files,
+        paths: files,
         initialExpansion: 1,
         search: true,
         onSelectionChange: handleSelectionChange,
     });
 
-    // Also track selection via hook for reactivity
-    useFileTreeSelection(model);
-
     // useFileTree creates the model once and ignores later option changes,
     // so we must call resetPaths when the file list changes.
-    const prevFilesRef = useRef(smfs.files);
+    const prevFilesRef = useRef(files);
     useEffect(() => {
-        if (prevFilesRef.current !== smfs.files) {
-            prevFilesRef.current = smfs.files;
-            model.resetPaths(smfs.files);
+        if (prevFilesRef.current !== files) {
+            prevFilesRef.current = files;
+            model.resetPaths(files);
         }
-    }, [smfs.files, model]);
+    }, [files, model]);
 
     if (!smfs.sandboxReady) {
         return (

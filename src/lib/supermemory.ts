@@ -23,11 +23,24 @@ async function readBodySafe(res: Response): Promise<string> {
 }
 
 /**
- * Upsert a note into Supermemory. Uses the note's id as the customId so that
- * subsequent calls for the same note overwrite the existing document.
+ * Build a safe filesystem-style path for a note. Used as metadata so
+ * Supermemory knows the file structure of the user's notes.
+ */
+function noteFilePath(note: SupermemoryNote): string {
+  const safeName = (note.title || "untitled")
+    .replace(/[^a-zA-Z0-9_\-. ]/g, "_")
+    .slice(0, 100);
+  return `/notes/${safeName}.md`;
+}
+
+/**
+ * Upsert a note into Supermemory as a file upload. Uses the note's id as the
+ * customId so that subsequent calls for the same note overwrite the existing
+ * document.
  *
- * The user's container tag is attached so that searches scoped to the same
- * tag only return that user's notes.
+ * Each note is uploaded with a `filePath` in metadata (e.g. `/notes/My Note.md`)
+ * so Supermemory understands the file structure. The user's container tag scopes
+ * the document so searches only return that user's notes.
  *
  * Throws on any non-2xx response so callers can surface failures (e.g. report
  * accurate `synced` counts in the bulk sync route).
@@ -37,6 +50,7 @@ export async function postSupermemoryDocument(
   note: SupermemoryNote,
   userId: string
 ): Promise<void> {
+  const filePath = noteFilePath(note);
   const res = await fetch("https://api.supermemory.ai/v3/documents", {
     method: "POST",
     headers: {
@@ -46,9 +60,12 @@ export async function postSupermemoryDocument(
     body: JSON.stringify({
       content: note.content || "",
       customId: note.id,
-      containerTags: [userContainerTag(userId)],
+      containerTag: userContainerTag(userId),
       metadata: {
         title: note.title,
+        filePath,
+        fileName: `${(note.title || "untitled").slice(0, 100)}.md`,
+        fileType: "markdown",
         source: "notty",
         noteId: note.id,
         userId,

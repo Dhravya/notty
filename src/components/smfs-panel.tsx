@@ -3,21 +3,25 @@ import { useSmfs } from "@/context/smfs-context";
 import { useFileTree, FileTree } from "@pierre/trees/react";
 
 export function SmfsRightPanel() {
+    const { isOpen } = useSmfs();
+    return isOpen ? <SmfsRightPanelContent /> : null;
+}
+
+function SmfsRightPanelContent() {
     const smfs = useSmfs();
 
     const { sandboxReady, initSandbox, refreshFiles, files, selectFile } = smfs;
 
     // Initialize sandbox and load files on mount.
     useEffect(() => {
-        if (!smfs.isOpen) return;
         if (!sandboxReady) {
             initSandbox().then(() => {
                 refreshFiles();
-            });
+            }).catch(() => {});
         } else {
             refreshFiles();
         }
-    }, [smfs.isOpen, sandboxReady, initSandbox, refreshFiles]);
+    }, [sandboxReady, initSandbox, refreshFiles]);
 
     const handleSelectionChange = useCallback(
         (selectedPaths: readonly string[]) => {
@@ -40,19 +44,11 @@ export function SmfsRightPanel() {
 
     // useFileTree creates the model once and ignores later option changes,
     // so we must call resetPaths when the file list changes.
-    const prevFilesRef = useRef(files);
-    useEffect(() => {
-        if (prevFilesRef.current !== files) {
-            prevFilesRef.current = files;
-            model.resetPaths(files);
-        }
-    }, [files, model]);
-
-    if (!smfs.isOpen) return null;
+    useEffect(() => { model.resetPaths(files); }, [files, model]);
 
     return (
         <div
-            className="smfs-panel flex flex-col h-full border-l"
+            className="smfs-panel hidden md:flex flex-col h-full border-l"
             style={{
                 background: "var(--color-paper)",
                 borderColor: "var(--color-border-warm)",
@@ -164,7 +160,7 @@ function SandboxInitState() {
                     Sandbox unavailable
                 </span>
                 <button
-                    onClick={() => smfs.initSandbox().then(() => smfs.refreshFiles())}
+                    onClick={() => smfs.initSandbox().then(() => smfs.refreshFiles()).catch(() => {})}
                     className="px-4 py-2 rounded-lg bg-[var(--color-sidebar-active)] text-[var(--color-ink)] text-[13px] font-medium hover:opacity-80 transition-opacity"
                 >
                     Retry

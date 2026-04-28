@@ -10,6 +10,7 @@ const SHORTCUT_SECTIONS = [
             { keys: `${mod}+K`, desc: "Command palette" },
             { keys: `${mod}+D`, desc: "Toggle dark mode" },
             { keys: `${mod}+\\`, desc: "Toggle sidebar" },
+            { keys: `${mod}+Shift+F`, desc: "Toggle Supermemory FS" },
             { keys: "?", desc: "Show keyboard shortcuts" },
         ],
     },

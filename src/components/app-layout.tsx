@@ -5,6 +5,7 @@ import { CommandPalette } from "./command-palette";
 import { ShortcutsHelp } from "./shortcuts-help";
 import { useFolders } from "@/context/folders-context";
 import { useSmfs } from "@/context/smfs-context";
+import { useAuth } from "@/context/auth-context";
 import { useHotkeys } from "@/lib/hotkeys";
 import { toggleDarkMode } from "@/lib/dark-mode";
 import { isTauri } from "@/lib/platform";
@@ -14,12 +15,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
     const { folders, selectedFolderId } = useFolders();
     const folder = folders.find((f) => f.id === selectedFolderId);
     const smfs = useSmfs();
+    const { user } = useAuth();
+    const isAuthenticated = user && !user.isAnonymous;
     const [sidebarVisible, setSidebarVisible] = useState(() => window.innerWidth >= 768);
 
     useHotkeys([
         { key: "mod+\\", handler: () => setSidebarVisible((v) => !v), allowInInput: true },
         { key: "mod+d", handler: toggleDarkMode, allowInInput: true },
-        { key: "mod+shift+f", handler: () => smfs.togglePanel(), allowInInput: true },
+        { key: "mod+shift+f", handler: () => { if (isAuthenticated) smfs.togglePanel(); }, allowInInput: true },
     ]);
 
     const style: CSSProperties | undefined = folder?.color
@@ -58,8 +61,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     </button>
                 )}
                 {children}
+                {/* SMFS toggle — top-right of main area */}
+                {isAuthenticated && !smfs.isOpen && (
+                    <button
+                        onClick={smfs.togglePanel}
+                        className="fixed top-4 right-4 z-30 p-2 rounded-lg bg-[var(--color-card)] border border-[var(--color-border-warm)] shadow-sm text-[var(--color-ink-muted)] hover:bg-[var(--color-sidebar-active)] transition-colors"
+                        aria-label="Open Supermemory FS"
+                        title="Supermemory FS (⌘⇧F)"
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="15" y1="3" x2="15" y2="21" />
+                        </svg>
+                    </button>
+                )}
             </main>
-            <SmfsRightPanel />
+            {isAuthenticated && <SmfsRightPanel />}
             <CommandPalette />
             <ShortcutsHelp />
         </div>

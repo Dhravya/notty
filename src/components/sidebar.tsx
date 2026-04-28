@@ -9,6 +9,7 @@ import { DarkModeToggle } from "./dark-mode-toggle";
 import { AuthSection } from "./auth-section";
 import { isTauri } from "@/lib/platform";
 import { useTabNavigate } from "@/context/tabs-context";
+import { PanelIcon } from "@/components/panel-icon";
 import type { SharedNote } from "@/lib/adapter";
 
 const FOLDER_COLORS = [
@@ -34,24 +35,24 @@ function SmfsSection() {
                     </svg>
                     <span>Supermemory FS</span>
                 </div>
-                <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{
-                        transform: smfs.isOpen ? "scaleX(-1)" : "scaleX(1)",
-                        transition: "transform 0.2s",
-                        color: "var(--color-ink-muted)",
-                    }}
-                >
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <line x1="15" y1="3" x2="15" y2="21" />
-                </svg>
+                {smfs.isOpen ? (
+                    /* Chevron-right → visually indicates "collapse / close panel" */
+                    <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ color: "var(--color-ink-muted)" }}
+                    >
+                        <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                ) : (
+                    <PanelIcon size={12} style={{ color: "var(--color-ink-muted)" }} />
+                )}
             </button>
         </div>
     );

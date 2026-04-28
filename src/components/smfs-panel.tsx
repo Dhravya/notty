@@ -13,11 +13,12 @@ function SmfsRightPanelContent() {
     const { sandboxReady, initSandbox, refreshFiles, files, selectFile } = smfs;
 
     // Initialize sandbox and load files on mount.
+    // When initSandbox succeeds it flips sandboxReady → true, which re-triggers
+    // this effect and enters the `else` branch to call refreshFiles(). We avoid
+    // calling refreshFiles() eagerly in the .then() to prevent a redundant fetch.
     useEffect(() => {
         if (!sandboxReady) {
-            initSandbox().then(() => {
-                refreshFiles();
-            }).catch(() => {});
+            initSandbox().catch(() => {}); // errors already surfaced via toast inside initSandbox
         } else {
             refreshFiles();
         }
@@ -160,7 +161,7 @@ function SandboxInitState() {
                     Sandbox unavailable
                 </span>
                 <button
-                    onClick={() => smfs.initSandbox().then(() => smfs.refreshFiles()).catch(() => {})}
+                    onClick={() => smfs.initSandbox().catch(() => {})} // errors surfaced via toast; refreshFiles runs via effect when sandboxReady flips
                     className="px-4 py-2 rounded-lg bg-[var(--color-sidebar-active)] text-[var(--color-ink)] text-[13px] font-medium hover:opacity-80 transition-opacity"
                 >
                     Retry

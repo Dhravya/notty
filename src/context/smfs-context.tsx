@@ -280,7 +280,12 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
             // res.ok to avoid leaving orphaned user messages with no assistant
             // response (which would produce invalid "two consecutive user
             // messages" history on the next sendMessage call).
+            //
+            // Save a snapshot so we can roll back if an error terminates the
+            // stream before any assistant turn is flushed (Review #3 fix).
+            const historySnapshot = [...rawHistoryRef.current];
             rawHistoryRef.current = [...rawHistoryRef.current, { role: "user", content: message }];
+            let historyFinalized = false;
 
             // Per-iteration accumulators (reset on each loop_turn event).
             let iterAssistantBlocks: Array<
@@ -310,6 +315,7 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
                             { role: "user", content: [...iterToolResults] },
                         ];
                     }
+                    historyFinalized = true;
                 }
                 // Reset for next iteration.
                 iterAssistantBlocks = [];
@@ -398,10 +404,17 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
                                     ...rawHistoryRef.current,
                                     { role: "assistant", content: assistantContent },
                                 ];
+                                historyFinalized = true;
                             }
                             // Refresh files after agent is done (it may have modified the filesystem)
                             refreshFiles();
                         } else if (event.type === "error") {
+                            // Roll back the pending user turn if no assistant turn was
+                            // ever flushed, preventing invalid "two consecutive user
+                            // messages" history on the next sendMessage call.
+                            if (!historyFinalized) {
+                                rawHistoryRef.current = historySnapshot;
+                            }
                             toast.error(`Agent error: ${event.message}`);
                         }
                     } catch {}

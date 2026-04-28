@@ -329,6 +329,18 @@ app.use("/api/notes-trash", requireAuth);
 app.use("/api/folders/*", requireAuth);
 app.use("/api/smfs/*", requireAuth);
 
+// SMFS is a paid feature — block anonymous users (who pass requireAuth since
+// AuthProvider auto-signs them in). The client already hides the UI for
+// anonymous sessions, but this guards the API against direct requests.
+const requireNonAnonymousForSmfs = async (c: any, next: any) => {
+    const session = await getSession(c.env, c.req.raw);
+    if (session?.user?.isAnonymous) {
+        return c.json({ error: "Sign in to use Supermemory FS" }, 403);
+    }
+    return next();
+};
+app.use("/api/smfs/*", requireNonAnonymousForSmfs);
+
 // --- Notes API ---
 app.get("/api/notes", (c) => c.var.userStub.fetch(new Request("https://do/notes")));
 app.post("/api/notes", async (c) => {

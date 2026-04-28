@@ -232,8 +232,13 @@ function FileTreeSection({ model }: { model: FileTreeModel }) {
             </button>
 
             <div
-                className={`px-2 ${filesExpanded ? "max-h-[240px] overflow-y-auto" : "max-h-0 overflow-hidden"}`}
-                style={{ transition: "max-height 0.2s ease" }}
+                className={`px-2 ${filesExpanded ? "overflow-hidden" : "max-h-0 overflow-hidden"}`}
+                style={{
+                    transition: "height 0.2s ease",
+                    // @pierre/trees requires a fixed height on its container for virtual-scroll
+                    // to work correctly; max-h without height leaves the scroll viewport at 0px.
+                    height: filesExpanded ? "240px" : 0,
+                }}
             >
                 {smfs.files.length === 0 ? (
                     <div className="px-2 py-3 text-center">
@@ -248,6 +253,8 @@ function FileTreeSection({ model }: { model: FileTreeModel }) {
                             {
                                 fontSize: "12px",
                                 "--trees-item-height": "28px",
+                                // Must fill the container so @pierre/trees measures a non-zero viewport
+                                height: "100%",
                             } as React.CSSProperties
                         }
                     />

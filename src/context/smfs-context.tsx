@@ -229,6 +229,11 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
         updateMessages(prev => [...prev, userMsg]);
         setAgentLoading(true);
 
+        // Declare outside try so the catch block can roll back rawHistoryRef
+        // if stream processing throws an unexpected JS exception.
+        let historySnapshot: Array<{ role: "user" | "assistant"; content: unknown }> = [];
+        let historyFinalized = false;
+
         try {
             // Use the raw Anthropic-format history accumulated from previous
             // turns. This preserves tool_use/tool_result content blocks that
@@ -283,9 +288,8 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
             //
             // Save a snapshot so we can roll back if an error terminates the
             // stream before any assistant turn is flushed (Review #3 fix).
-            const historySnapshot = [...rawHistoryRef.current];
+            historySnapshot = [...rawHistoryRef.current];
             rawHistoryRef.current = [...rawHistoryRef.current, { role: "user", content: message }];
-            let historyFinalized = false;
 
             // Per-iteration accumulators (reset on each loop_turn event).
             let iterAssistantBlocks: Array<
@@ -421,6 +425,12 @@ export function SmfsProvider({ children }: { children: ReactNode }) {
                 }
             }
         } catch (err: unknown) {
+            // Roll back the pending user turn if stream processing threw an
+            // unexpected JS exception (e.g. reader.read() on network cut),
+            // preventing invalid "two consecutive user messages" history.
+            if (!historyFinalized && historySnapshot.length > 0) {
+                rawHistoryRef.current = historySnapshot;
+            }
             toast.error(`Agent error: ${errMsg(err)}`);
         } finally {
             setAgentLoading(false);

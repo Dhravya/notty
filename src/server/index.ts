@@ -909,6 +909,9 @@ app.delete("/api/folders/:id", (c) =>
 
 // --- SMFS API ---
 app.post("/api/smfs/sandbox", async (c) => {
+    if (!process.env.E2B_API_KEY) {
+        return c.json({ error: "E2B_API_KEY not configured — contact the app administrator" }, 500);
+    }
     let sandboxId = await getSmfsSandbox(c.var.userStub);
     if (sandboxId) {
         // Try to connect to verify it's still alive

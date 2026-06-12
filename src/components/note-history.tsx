@@ -63,6 +63,11 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
 }
 
 function createdByLabel(v: NoteVersion): string | null {
+    if (v.summary) return v.summary;
+    if (v.kind === "session") return "Editing session";
+    if (v.kind === "backup") return "backup";
+    if (v.kind === "restore") return "restored";
+    if (v.kind === "merge") return "merge";
     if (!v.created_by || v.created_by === "system") return null;
     if (v.created_by === "auto-backup") return "backup";
     if (v.created_by === "restore") return "restored";

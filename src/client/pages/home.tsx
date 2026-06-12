@@ -48,9 +48,9 @@ function usePersistedView(): [ViewMode, (v: ViewMode) => void] {
 export function HomePage() {
     const navigate = useNavigate();
     const tabNavigate = useTabNavigate();
-    const { notes, loading, deleteNote, revalidate } = useNotes();
+    const { notes, loading, deleteNote } = useNotes();
     const { folders, selectedFolderId, selectFolder, renameFolder, updateFolderDescription } = useFolders();
-    const { media, uploadMedia, deleteMedia, publishMedia, updateCaption, getMediaUrl, revalidate: revalidateMedia } = useMedia();
+    const { media, uploadMedia, deleteMedia, publishMedia, updateCaption, getMediaUrl } = useMedia();
     const [sortMode, setSortMode] = useState<SortMode>("recent");
     const [viewMode, setViewMode] = usePersistedView();
     const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -72,8 +72,6 @@ export function HomePage() {
     const [descValue, setDescValue] = useState("");
     const nameRef = useRef<HTMLInputElement>(null);
     const descRef = useRef<HTMLTextAreaElement>(null);
-
-    useEffect(() => { revalidate(); revalidateMedia(); }, [revalidate, revalidateMedia]);
 
     const handleUpload = useCallback(async (files: FileList | File[]) => {
         setUploading(true);

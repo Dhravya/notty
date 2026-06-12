@@ -245,6 +245,7 @@ async function syncNoteToSupermemory(
     if (!noteRes.ok) return;
     const note = await noteRes.json() as SupermemoryNote;
     await postSupermemoryDocument(apiKey, note, userId);
+    await userStub.fetch(new Request(`https://do/notes/${noteId}/memory-indexed`, { method: "POST" }));
 }
 
 /**
@@ -353,17 +354,6 @@ app.post("/api/notes", async (c) => {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     }));
 
-    // Async sync to Supermemory — fetch the saved note from the DO so we use
-    // the persisted content rather than re-reading the request body.
-    const supermemoryKey = process.env.SUPERMEMORY_API_KEY;
-    if (supermemoryKey && body.id && doRes.ok) {
-        const userStub = c.var.userStub;
-        const userId = c.var.userId;
-        c.executionCtx.waitUntil(
-            syncNoteToSupermemory(userStub, supermemoryKey, userId, body.id).catch(() => {})
-        );
-    }
-
     return doRes;
 });
 
@@ -404,18 +394,6 @@ app.put("/api/notes/:id", async (c) => {
         method: "POST", headers: { "Content-Type": "application/json" }, body,
     }));
 
-    // Sync edits to Supermemory only for the owner's own writes. Edits made
-    // by collaborators via a share token belong to the owner's containerTag
-    // and are kept in sync from the owner's side, so we skip them here.
-    const supermemoryKey = process.env.SUPERMEMORY_API_KEY;
-    if (supermemoryKey && doRes.ok && access.permission === "owner") {
-        const userStub = c.var.userStub;
-        const userId = c.var.userId;
-        c.executionCtx.waitUntil(
-            syncNoteToSupermemory(userStub, supermemoryKey, userId, id).catch(() => {})
-        );
-    }
-
     return doRes;
 });
 
@@ -454,6 +432,34 @@ app.delete("/api/notes/:id/permanent", async (c) => {
         c.executionCtx.waitUntil(deleteSupermemoryDocument(supermemoryKey, id).catch(() => {}));
     }
     return res;
+});
+
+app.post("/api/notes/:id/sessions", (c) =>
+    c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/sessions`, { method: "POST" }))
+);
+
+app.post("/api/notes/:id/sessions/:sessionId/finalize", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.text();
+    const res = await c.var.userStub.fetch(new Request(`https://do/notes/${id}/sessions/${c.req.param("sessionId")}/finalize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+    }));
+    const supermemoryKey = process.env.SUPERMEMORY_API_KEY;
+    if (supermemoryKey && res.ok) {
+        c.executionCtx.waitUntil(
+            syncNoteToSupermemory(c.var.userStub, supermemoryKey, c.var.userId, id).catch(() => {})
+        );
+    }
+    return res;
+});
+
+app.post("/api/notes/:id/memory-sync", async (c) => {
+    const supermemoryKey = process.env.SUPERMEMORY_API_KEY;
+    if (!supermemoryKey) return c.json({ skipped: true, reason: "SUPERMEMORY_API_KEY not configured" });
+    await syncNoteToSupermemory(c.var.userStub, supermemoryKey, c.var.userId, c.req.param("id"));
+    return c.json({ ok: true });
 });
 
 // --- Branches ---

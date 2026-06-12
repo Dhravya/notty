@@ -22,7 +22,7 @@ type NotesContextType = {
     emptyTrash: () => Promise<void>;
     updateNote: (id: string, data: Partial<Pick<Note, "title" | "content">>) => void;
     patchNote: (id: string, data: Partial<Note>) => void;
-    saveNote: (id: string, title: string, content: string, folderId?: string | null) => void;
+    saveNote: (id: string, title: string, content: string, folderId?: string | null) => Promise<void>;
     moveNoteToFolder: (noteId: string, folderId: string | null) => void;
     setNoteSyncMode: (noteId: string, mode: "cloud" | "local") => void;
     revalidate: () => Promise<void>;
@@ -47,10 +47,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
     const fetchNotes = useCallback(async () => {
         try {
-            const [serverNotes, trashNotes] = await Promise.all([
-                adapter.getNotes(),
-                adapter.getTrash(),
-            ]);
+            const serverNotes = await adapter.getNotes();
             setNotes((prev) => {
                 const merged = new Map<string, Note>();
                 for (const n of serverNotes) merged.set(n.id, n);
@@ -67,12 +64,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
                 }
                 return sortByUpdated(Array.from(merged.values()));
             });
-            setTrash(trashNotes);
         } catch (e) {
             console.error("Failed to fetch notes:", e);
         } finally {
             setLoading(false);
         }
+
+        adapter.getTrash()
+            .then(setTrash)
+            .catch((e) => console.error("Failed to fetch trash:", e));
     }, [adapter]);
 
     useEffect(() => {
@@ -170,7 +170,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         setTrash([]);
     }, [adapter, trash]);
 
-    const saveNote = useCallback((id: string, title: string, content: string, folderId?: string | null) => {
+    const saveNote = useCallback(async (id: string, title: string, content: string, folderId?: string | null) => {
         const now = Date.now();
         const note: Note = { id, title, content, folder_id: folderId, created_at: now, updated_at: now };
 
@@ -186,14 +186,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
             return [note, ...prev];
         });
 
-        adapter.saveNote(id, title, content, folderId);
+        await adapter.saveNote(id, title, content, folderId);
     }, [adapter]);
 
     const createNote = useCallback(async (id: string, folderId?: string | null): Promise<Note> => {
         const note: Note = { id, title: "Untitled", content: "", folder_id: folderId, created_at: Date.now(), updated_at: Date.now() };
         localEditsRef.current.set(id, note);
         setNotes((prev) => [note, ...prev]);
-        adapter.saveNote(id, "Untitled", "", folderId);
+        await adapter.saveNote(id, "Untitled", "", folderId);
         return note;
     }, [adapter]);
 

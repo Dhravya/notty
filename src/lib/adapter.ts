@@ -12,6 +12,10 @@ export type Note = {
     published_at?: number | null;
     color?: string | null;
     deleted_at?: number | null;
+    yjs_initialized_at?: number | null;
+    last_indexed_hash?: string | null;
+    last_indexed_at?: number | null;
+    pending_index?: boolean | number;
     created_at: number;
     updated_at: number;
 };
@@ -53,7 +57,18 @@ export type NoteVersion = {
     parent_id?: string | null;
     content?: string;
     created_by: string;
+    kind?: "session" | "backup" | "restore" | "merge" | "manual";
+    summary?: string | null;
     created_at: number;
+};
+
+export type SaveResult = {
+    ok: true;
+    note?: Note | null;
+};
+
+export type SessionHandle = {
+    sessionId: string;
 };
 
 export type NoteBranch = {
@@ -112,7 +127,8 @@ export interface NottyAdapter {
     getNotes(): Promise<Note[]>;
     getNote(id: string, shareToken?: string): Promise<Note | null>;
     getNoteMeta(id: string, shareToken?: string): Promise<Partial<Note> | null>;
-    saveNote(id: string, title: string, content: string, folderId?: string | null): void;
+    saveNote(id: string, title: string, content: string, folderId?: string | null): Promise<SaveResult>;
+    flushNote(noteId: string, reason: string): Promise<SaveResult>;
     deleteNote(id: string): Promise<void>;
     getTrash(): Promise<Note[]>;
     restoreNote(id: string): Promise<Note | null>;
@@ -140,6 +156,9 @@ export interface NottyAdapter {
     getNoteHistory(noteId: string): Promise<NoteVersion[]>;
     getVersion(noteId: string, versionId: string): Promise<NoteVersion | null>;
     restoreVersion(noteId: string, versionId: string): Promise<Note | null>;
+    beginEditSession(noteId: string): Promise<SessionHandle>;
+    finalizeEditSession(noteId: string, sessionId: string, reason: string): Promise<{ versionId?: string }>;
+    scheduleMemorySync(noteId: string, reason: string): Promise<void>;
 
     // Branches
     getBranches(noteId: string): Promise<NoteBranch[]>;

@@ -1,5 +1,5 @@
 import type * as Y from "yjs";
-import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
+import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem, SaveResult, SessionHandle } from "./adapter";
 import { NottyProvider } from "./yjs-provider";
 import { authClient } from "./auth-client";
 
@@ -123,14 +123,20 @@ export class WebAdapter implements NottyAdapter {
         }
     }
 
-    saveNote(id: string, title: string, content: string, folderId?: string | null): void {
+    async saveNote(id: string, title: string, content: string, folderId?: string | null): Promise<SaveResult> {
         const body: Record<string, any> = { id, title, content };
         if (folderId !== undefined) body.folder_id = folderId;
-        fetch("/api/notes", {
+        const res = await fetch("/api/notes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
-        }).catch(() => {});
+        });
+        await assertOk(res, "Failed to save note");
+        return { ok: true, note: await res.json() };
+    }
+
+    async flushNote(): Promise<SaveResult> {
+        return { ok: true };
     }
 
     async deleteNote(id: string): Promise<void> {
@@ -275,6 +281,27 @@ export class WebAdapter implements NottyAdapter {
         });
         await assertOk(res, "Failed to restore version");
         return res.json();
+    }
+
+    async beginEditSession(noteId: string): Promise<SessionHandle> {
+        const res = await fetch(`/api/notes/${noteId}/sessions`, { method: "POST" });
+        await assertOk(res, "Failed to begin edit session");
+        return res.json();
+    }
+
+    async finalizeEditSession(noteId: string, sessionId: string, reason: string): Promise<{ versionId?: string }> {
+        const res = await fetch(`/api/notes/${noteId}/sessions/${sessionId}/finalize`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason }),
+        });
+        await assertOk(res, "Failed to finalize edit session");
+        return res.json();
+    }
+
+    async scheduleMemorySync(noteId: string): Promise<void> {
+        const res = await fetch(`/api/notes/${noteId}/memory-sync`, { method: "POST" });
+        await assertOk(res, "Failed to sync note to memory");
     }
 
     // Branches

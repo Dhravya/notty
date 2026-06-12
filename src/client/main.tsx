@@ -26,11 +26,11 @@ async function getAdapter(): Promise<NottyAdapter> {
     if (isTauri) {
         const { DesktopAdapter } = await import("@/lib/desktop-adapter");
         const adapter = new DesktopAdapter();
-        // Sync markdown files on startup
-        try {
-            const { invoke } = await import("@tauri-apps/api/core");
-            await invoke("sync_from_markdown");
-        } catch {}
+        // Import markdown in the background. Blocking first render here makes
+        // startup scale with the number of files in the sync directory.
+        import("@tauri-apps/api/core")
+            .then(({ invoke }) => invoke("sync_from_markdown"))
+            .catch((e) => console.warn("[notty] Markdown startup sync failed:", e));
         return adapter;
     }
     const { WebAdapter } = await import("@/lib/web-adapter");

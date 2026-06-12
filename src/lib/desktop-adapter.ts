@@ -1,4 +1,4 @@
-import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem } from "./adapter";
+import type { NottyAdapter, Note, NoteVersion, NoteBranch, NoteTree, User, Folder, Share, SharedNote, Profile, MediaItem, SaveResult, SessionHandle } from "./adapter";
 import type * as Y from "yjs";
 import { NottyProvider } from "./yjs-provider";
 import { authClient, createDesktopAuthClient } from "./auth-client";
@@ -90,16 +90,17 @@ export class DesktopAdapter implements NottyAdapter {
     }
 
     async getSession(): Promise<User | null> {
-        const cloud = await detectCloud();
+        const cloud = cloudUrlCache;
         if (cloud && sessionTokenCache) {
             try {
-                const res = await cloudFetch(`${cloud}/api/auth/get-session`);
+                const res = await cloudFetch(`${cloud}/api/auth/get-session`, { signal: AbortSignal.timeout(750) });
                 if (res.ok) {
                     const data = await res.json() as { user?: User };
                     if (data.user) return data.user;
                 }
             } catch {}
         }
+        if (cloudUrlCache === undefined) detectCloud();
         return { id: "local", name: "Local User" };
     }
 
@@ -121,29 +122,30 @@ export class DesktopAdapter implements NottyAdapter {
     async getNotes(): Promise<Note[]> {
         const local: Note[] = await invoke("get_notes");
 
-        // Merge cloud notes in background — don't block the UI
+        // Merge cloud notes in background — don't block the UI.
         const cloud = cloudUrlCache;
         if (cloud) {
-            try {
-                const res = await cloudFetch(`${cloud}/api/notes`, { signal: AbortSignal.timeout(3000) });
-                if (res.ok) {
-                    const cloudNotes: Note[] = await res.json();
-                    const merged = new Map<string, Note>();
-                    for (const n of local) merged.set(n.id, n);
-                    for (const n of cloudNotes) {
-                        const existing = merged.get(n.id);
-                        if (!existing || n.updated_at > existing.updated_at) {
-                            merged.set(n.id, n);
-                            invoke("save_note", { id: n.id, title: n.title, content: n.content, folderId: n.folder_id ?? null }).catch(() => {});
-                        } else if (existing && n.folder_id && existing.folder_id !== n.folder_id) {
-                            // Cloud folder assignment is authoritative — sync it even if local content is newer
-                            existing.folder_id = n.folder_id;
-                            invoke("move_note_to_folder", { id: n.id, folderId: n.folder_id }).catch(() => {});
+            (async () => {
+                try {
+                    const res = await cloudFetch(`${cloud}/api/notes`, { signal: AbortSignal.timeout(3000) });
+                    if (res.ok) {
+                        const cloudNotes: Note[] = await res.json();
+                        const merged = new Map<string, Note>();
+                        for (const n of local) merged.set(n.id, n);
+                        for (const n of cloudNotes) {
+                            const existing = merged.get(n.id);
+                            if (!existing || n.updated_at > existing.updated_at) {
+                                merged.set(n.id, n);
+                                invoke("save_note", { id: n.id, title: n.title, content: n.content, folderId: n.folder_id ?? null }).catch(() => {});
+                            } else if (existing && n.folder_id && existing.folder_id !== n.folder_id) {
+                                // Cloud folder assignment is authoritative — sync it even if local content is newer
+                                existing.folder_id = n.folder_id;
+                                invoke("move_note_to_folder", { id: n.id, folderId: n.folder_id }).catch(() => {});
+                            }
                         }
                     }
-                    return Array.from(merged.values()).sort((a, b) => b.updated_at - a.updated_at);
-                }
-            } catch {}
+                } catch {}
+            })();
         }
         return local;
     }
@@ -163,10 +165,9 @@ export class DesktopAdapter implements NottyAdapter {
         return null;
     }
 
-    saveNote(id: string, title: string, content: string, folderId?: string | null): void {
-        invoke("save_note", { id, title, content, folderId })
-            .then(syncMarkdown)
-            .catch(console.error);
+    async saveNote(id: string, title: string, content: string, folderId?: string | null): Promise<SaveResult> {
+        const note = await invoke<Note>("save_note", { id, title, content, folderId });
+        syncMarkdown();
 
         cloudSync((cloud) => {
             const body: Record<string, any> = { id, title, content };
@@ -177,6 +178,12 @@ export class DesktopAdapter implements NottyAdapter {
                 body: JSON.stringify(body),
             }).catch((e) => console.warn("[notty] Cloud save failed:", e));
         });
+
+        return { ok: true, note };
+    }
+
+    async flushNote(): Promise<SaveResult> {
+        return { ok: true };
     }
 
     async deleteNote(id: string): Promise<void> {
@@ -212,22 +219,23 @@ export class DesktopAdapter implements NottyAdapter {
         const local: Folder[] = await invoke("get_folders");
         const cloud = cloudUrlCache;
         if (cloud) {
-            try {
-                const res = await cloudFetch(`${cloud}/api/folders`, { signal: AbortSignal.timeout(3000) });
-                if (res.ok) {
-                    const cloudFolders: Folder[] = await res.json();
-                    const merged = new Map<string, Folder>();
-                    for (const f of local) merged.set(f.id, f);
-                    for (const f of cloudFolders) {
-                        const existing = merged.get(f.id);
-                        if (!existing || f.updated_at > existing.updated_at) {
-                            merged.set(f.id, f);
-                            invoke("save_folder", { id: f.id, name: f.name, color: f.color, description: f.description, sortOrder: f.sort_order }).catch(() => {});
+            (async () => {
+                try {
+                    const res = await cloudFetch(`${cloud}/api/folders`, { signal: AbortSignal.timeout(3000) });
+                    if (res.ok) {
+                        const cloudFolders: Folder[] = await res.json();
+                        const merged = new Map<string, Folder>();
+                        for (const f of local) merged.set(f.id, f);
+                        for (const f of cloudFolders) {
+                            const existing = merged.get(f.id);
+                            if (!existing || f.updated_at > existing.updated_at) {
+                                merged.set(f.id, f);
+                                invoke("save_folder", { id: f.id, name: f.name, color: f.color, description: f.description, sortOrder: f.sort_order }).catch(() => {});
+                            }
                         }
                     }
-                    return Array.from(merged.values()).sort((a, b) => a.sort_order - b.sort_order);
-                }
-            } catch {}
+                } catch {}
+            })();
         }
         return local;
     }
@@ -292,6 +300,15 @@ export class DesktopAdapter implements NottyAdapter {
     async getNoteHistory(): Promise<NoteVersion[]> { return []; }
     async getVersion(): Promise<NoteVersion | null> { return null; }
     async restoreVersion(): Promise<Note | null> { throw new Error("History requires cloud"); }
+    async beginEditSession(): Promise<SessionHandle> { return { sessionId: crypto.randomUUID() }; }
+    async finalizeEditSession(): Promise<{ versionId?: string }> { return {}; }
+    async scheduleMemorySync(noteId: string): Promise<void> {
+        const cloud = cloudUrlCache;
+        if (!cloud) return;
+        try {
+            await cloudFetch(`${cloud}/api/notes/${noteId}/memory-sync`, { method: "POST", signal: AbortSignal.timeout(3000) });
+        } catch {}
+    }
     async getBranches(): Promise<NoteBranch[]> { return []; }
     async createBranch(): Promise<NoteBranch> { throw new Error("Branches require cloud"); }
     async checkoutBranch(): Promise<{ branch: string; content: string }> { throw new Error("Branches require cloud"); }
@@ -323,14 +340,6 @@ export class DesktopAdapter implements NottyAdapter {
 
     createProvider(noteId: string, doc: Y.Doc): NottyProvider {
         // Desktop: skip IndexedDB Yjs persistence (SQLite is the persistence layer).
-        const provider = new NottyProvider(noteId, doc, { connect: false, skipPersistence: true });
-        // When cloud is available, connect Yjs WebSocket for real-time sync
-        detectCloud().then((cloud) => {
-            if (cloud && !provider.destroyed && sessionTokenCache) {
-                provider.setServerUrl(cloud, sessionTokenCache);
-                provider.connect();
-            }
-        });
-        return provider;
+        return new NottyProvider(noteId, doc, { connect: false, skipPersistence: true });
     }
 }

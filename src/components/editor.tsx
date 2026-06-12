@@ -79,6 +79,13 @@ const FONT_STYLES: Record<FontChoice, React.CSSProperties> = {
     mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
 };
 
+const SESSION_IDLE_MS = 2 * 60 * 1000;
+const MEMORY_SYNC_IDLE_MS = 30 * 1000;
+
+function wait(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGuardRef, compact = false }: { noteId: string; shareToken?: string; readOnly?: boolean; folderId?: string | null; saveGuardRef?: React.MutableRefObject<boolean>; compact?: boolean }) {
     const { saveNote } = useNotes();
     const adapter = useAdapter();
@@ -89,8 +96,13 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     // Stable ref for folderId — prevents stale closures during unmount/view-transitions
     const folderIdRef = useRef(folderId);
     folderIdRef.current = folderId;
-    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
     const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const sessionRef = useRef<string | null>(null);
+    const sessionStartingRef = useRef<Promise<string | null> | null>(null);
+    const savePromiseRef = useRef<Promise<void> | null>(null);
+    const memoryTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const sessionIdleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
     const [wordCount, setWordCount] = useState(0);
     const [charCount, setCharCount] = useState(0);
 
@@ -128,38 +140,110 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         [noteId, ydoc, adapter, shareToken]
     );
 
-    // --- DATA SAFETY: Aggressive, redundant saving ---
+    const ensureSession = useCallback(async () => {
+        if (shareToken || readOnly) return null;
+        if (sessionRef.current) return sessionRef.current;
+        if (!sessionStartingRef.current) {
+            sessionStartingRef.current = adapter.beginEditSession(noteId)
+                .then((session) => {
+                    sessionRef.current = session.sessionId;
+                    return session.sessionId;
+                })
+                .catch((e) => {
+                    console.warn("[notty] Failed to begin edit session:", e);
+                    return null;
+                })
+                .finally(() => {
+                    sessionStartingRef.current = null;
+                });
+        }
+        return sessionStartingRef.current;
+    }, [adapter, noteId, readOnly, shareToken]);
 
-    // Save the title + content JSON to the server (for notes list, search, etc.)
-    // For shared notes, Yjs WebSocket is the source of truth — skip HTTP saves
-    // Don't create empty untitled notes — only save if user actually typed something
+    const scheduleMemorySync = useCallback(() => {
+        if (shareToken || readOnly) return;
+        clearTimeout(memoryTimerRef.current);
+        memoryTimerRef.current = setTimeout(() => {
+            adapter.scheduleMemorySync(noteId, "idle-save").catch((e) => {
+                console.warn("[notty] Memory sync failed:", e);
+            });
+        }, MEMORY_SYNC_IDLE_MS);
+    }, [adapter, noteId, readOnly, shareToken]);
+
+    const finalizeSession = useCallback(async (reason: string) => {
+        clearTimeout(sessionIdleTimerRef.current);
+        clearTimeout(memoryTimerRef.current);
+        if (savePromiseRef.current) {
+            try { await savePromiseRef.current; } catch {}
+        }
+        const sessionId = sessionRef.current;
+        sessionRef.current = null;
+        if (!sessionId || shareToken || readOnly) return;
+        try {
+            await adapter.finalizeEditSession(noteId, sessionId, reason);
+            await adapter.scheduleMemorySync(noteId, `session-${reason}`);
+        } catch (e) {
+            console.warn("[notty] Failed to finalize edit session:", e);
+        }
+    }, [adapter, noteId, readOnly, shareToken]);
+
+    const scheduleSessionIdle = useCallback(() => {
+        clearTimeout(sessionIdleTimerRef.current);
+        sessionIdleTimerRef.current = setTimeout(() => {
+            finalizeSession("idle");
+        }, SESSION_IDLE_MS);
+    }, [finalizeSession]);
+
+    // Save the title + content JSON to the durable store. For shared notes,
+    // Yjs WebSocket is the source of truth, so skip HTTP/local snapshot saves.
     const saveNow = useCallback((editor: EditorInstance) => {
-        if (!user || shareToken || readOnly || saveGuardRef?.current) return;
+        if (!user || shareToken || readOnly || saveGuardRef?.current) return Promise.resolve();
         const json = editor.getJSON();
         const text = editor.getText().trim();
-        if (!text) return;
         const content = JSON.stringify(json);
-        if (content === lastSavedRef.current) return;
-        lastSavedRef.current = content;
+        if (!text && !lastSavedRef.current) return Promise.resolve();
+        if (content === lastSavedRef.current) return Promise.resolve();
         const title = extractTitle(json);
-        setSaveState("saving");
-        saveNote(noteId, title, content, folderIdRef.current);
-        clearTimeout(savedTimerRef.current);
-        savedTimerRef.current = setTimeout(() => {
-            setSaveState("saved");
-            savedTimerRef.current = setTimeout(() => setSaveState("idle"), 3000);
-        }, 400);
-    }, [noteId, saveNote, user, shareToken, readOnly]);
+
+        const run = (async () => {
+            await ensureSession();
+            setSaveState("saving");
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    await saveNote(noteId, title, content, folderIdRef.current);
+                    lastSavedRef.current = content;
+                    clearTimeout(savedTimerRef.current);
+                    setSaveState("saved");
+                    savedTimerRef.current = setTimeout(() => setSaveState("idle"), 3000);
+                    scheduleMemorySync();
+                    scheduleSessionIdle();
+                    return;
+                } catch (e) {
+                    if (attempt === 2) {
+                        setSaveState("error");
+                        throw e;
+                    }
+                    await wait(attempt === 0 ? 1000 : 3000);
+                }
+            }
+        })();
+        let tracked: Promise<void>;
+        tracked = run.finally(() => {
+            if (savePromiseRef.current === tracked) savePromiseRef.current = null;
+        });
+        savePromiseRef.current = tracked;
+        return run;
+    }, [ensureSession, noteId, readOnly, saveNote, scheduleMemorySync, scheduleSessionIdle, shareToken, user]);
 
     // Debounced save — fires 1.5s after last keystroke
     const debouncedSave = useDebouncedCallback((editor: EditorInstance) => {
-        saveNow(editor);
+        saveNow(editor).catch((e) => console.error("Save failed:", e));
     }, 1500);
 
     // Save on blur (switching tabs, clicking away)
     useEffect(() => {
         const onBlur = () => {
-            if (editorRef.current) saveNow(editorRef.current);
+            if (editorRef.current) saveNow(editorRef.current).catch((e) => console.error("Save failed:", e));
         };
         window.addEventListener("blur", onBlur);
         return () => window.removeEventListener("blur", onBlur);
@@ -169,12 +253,14 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     useEffect(() => {
         const onVisChange = () => {
             if (document.visibilityState === "hidden" && editorRef.current) {
-                saveNow(editorRef.current);
+                saveNow(editorRef.current)
+                    .then(() => finalizeSession("hidden"))
+                    .catch((e) => console.error("Save failed:", e));
             }
         };
         document.addEventListener("visibilitychange", onVisChange);
         return () => document.removeEventListener("visibilitychange", onVisChange);
-    }, [saveNow]);
+    }, [finalizeSession, saveNow]);
 
     // Save before unload (last resort — web only, skip for shared notes)
     useEffect(() => {
@@ -200,7 +286,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     // Periodic background save every 10s as safety net
     useEffect(() => {
         const interval = setInterval(() => {
-            if (editorRef.current) saveNow(editorRef.current);
+            if (editorRef.current) saveNow(editorRef.current).catch((e) => console.error("Save failed:", e));
         }, 10000);
         return () => clearInterval(interval);
     }, [saveNow]);
@@ -222,33 +308,20 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
         }
 
         if (isTauri) {
-            // Desktop: Yjs doc starts empty (no IndexedDB persistence).
-            // Wait for WebSocket sync to fill it from server, with a timeout
-            // fallback to local SQLite content for offline mode.
-            const wsSync = Promise.race([
-                provider.whenSynced,
-                new Promise((r) => setTimeout(r, 2000)),
-            ]);
-            wsSync.then(() => {
+            // Desktop is local-first: SQLite is the single seed path for the
+            // editor. Cloud sync mirrors snapshots in the adapter, but it must
+            // not merge a second Yjs document into this local editor session.
+            adapter.getNote(noteId).catch(() => null).then((data: any) => {
                 if (cancelled) return;
-                if (ydoc.getXmlFragment("default").length > 1) {
-                    // WebSocket sync provided content — use it
-                    setReady(true);
-                    return;
+                if (data?.content) {
+                    try {
+                        const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
+                        if (parsed?.type === "doc" && parsed.content?.length) {
+                            bootstrapRef.current = parsed;
+                        }
+                    } catch {}
                 }
-                // Offline or empty server — bootstrap from local SQLite
-                adapter.getNote(noteId).catch(() => null).then((data: any) => {
-                    if (cancelled) return;
-                    if (data?.content) {
-                        try {
-                            const parsed = typeof data.content === "string" ? JSON.parse(data.content) : data.content;
-                            if (parsed?.type === "doc" && parsed.content?.length) {
-                                bootstrapRef.current = parsed;
-                            }
-                        } catch {}
-                    }
-                    setReady(true);
-                });
+                setReady(true);
             });
             return () => { cancelled = true; };
         }
@@ -311,7 +384,10 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             debouncedSave.flush();
             // Belt-and-suspenders: if flush was a no-op (no pending call),
             // still save — catches the case where escape fires before first debounce
-            if (editorRef.current) saveNowRef.current(editorRef.current);
+            const savePromise = editorRef.current
+                ? saveNowRef.current(editorRef.current)
+                : Promise.resolve();
+            void savePromise.finally(() => finalizeSession("unmount"));
         }
         // Wait for IndexedDB to finish writing before destroying the doc,
         // so cycling back to this note loads the correct content.
@@ -324,7 +400,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             provider.destroy();
             ydoc.destroy();
         }
-    }, [provider, ydoc, debouncedSave]);
+    }, [provider, ydoc, debouncedSave, finalizeSession]);
 
     const collabExtensions = useMemo(() => [
         ...baseExtensions,
@@ -432,6 +508,7 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                             editor.commands.setContent(bootstrapRef.current);
                             bootstrapRef.current = null;
                         }
+                        lastSavedRef.current = JSON.stringify(editor.getJSON());
                         if (!readOnly) editor.commands.focus("end");
                         updateCounts(editor);
                     }}

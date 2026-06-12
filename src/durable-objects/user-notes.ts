@@ -104,6 +104,8 @@ export class UserNotesDurableObject extends DurableObject {
             this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_versions_note_time ON note_versions(note_id, created_at DESC)`);
             this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_versions_parent ON note_versions(parent_id)`);
             migrate("ALTER TABLE note_versions ADD COLUMN branch_id TEXT");
+            migrate("ALTER TABLE note_versions ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual'");
+            migrate("ALTER TABLE note_versions ADD COLUMN summary TEXT");
 
             // Branches — like git refs, just named pointers to version heads
             this.sql.exec(`
@@ -119,6 +121,24 @@ export class UserNotesDurableObject extends DurableObject {
             `);
             migrate("ALTER TABLE notes ADD COLUMN current_branch_id TEXT");
             migrate("ALTER TABLE notes ADD COLUMN deleted_at INTEGER");
+            migrate("ALTER TABLE notes ADD COLUMN yjs_initialized_at INTEGER");
+            migrate("ALTER TABLE notes ADD COLUMN last_indexed_hash TEXT");
+            migrate("ALTER TABLE notes ADD COLUMN last_indexed_at INTEGER");
+            migrate("ALTER TABLE notes ADD COLUMN pending_index INTEGER NOT NULL DEFAULT 0");
+
+            this.sql.exec(`
+                CREATE TABLE IF NOT EXISTS edit_sessions (
+                    id TEXT PRIMARY KEY,
+                    note_id TEXT NOT NULL,
+                    branch_id TEXT,
+                    base_content TEXT NOT NULL DEFAULT '',
+                    base_version_id TEXT,
+                    started_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    last_edit_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    finalized_at INTEGER
+                )
+            `);
+            this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_edit_sessions_note ON edit_sessions(note_id, finalized_at)`);
 
             this.sql.exec(`
                 CREATE TABLE IF NOT EXISTS media (
@@ -189,12 +209,12 @@ export class UserNotesDurableObject extends DurableObject {
                         const firstNode = parsed?.content?.[0];
                         const title = firstNode?.content?.map((n: any) => n.text || "").join("").trim() || "Untitled";
                         this.sql.exec(
-                            "UPDATE notes SET yjs_state = ?, content = ?, title = ?, updated_at = unixepoch() WHERE id = ?",
+                            "UPDATE notes SET yjs_state = ?, content = ?, title = ?, yjs_initialized_at = COALESCE(yjs_initialized_at, unixepoch()), pending_index = 1, updated_at = unixepoch() WHERE id = ?",
                             state, content, title, noteId
                         );
                     } else {
                         this.sql.exec(
-                            "UPDATE notes SET yjs_state = ?, updated_at = unixepoch() WHERE id = ?",
+                            "UPDATE notes SET yjs_state = ?, yjs_initialized_at = COALESCE(yjs_initialized_at, unixepoch()), updated_at = unixepoch() WHERE id = ?",
                             state, noteId
                         );
                     }
@@ -242,7 +262,7 @@ export class UserNotesDurableObject extends DurableObject {
 
     // --- Version creation (branch-aware) ---
 
-    private createVersion(noteId: string, title: string, content: string, createdBy = "system") {
+    private createVersion(noteId: string, title: string, content: string, createdBy = "system", kind = "manual", summary: string | null = null): string | null {
         const branch = this.getCurrentBranch(noteId);
         const parentId = branch.head_version_id;
 
@@ -265,16 +285,16 @@ export class UserNotesDurableObject extends DurableObject {
 
         if (needsCheckpoint) {
             this.sql.exec(
-                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
-                id, noteId, parentId, branch.id, title, content, createdBy
+                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by, kind, summary) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
+                id, noteId, parentId, branch.id, title, content, createdBy, kind, summary
             );
         } else {
             const parentContent = this.reconstructVersion(parentId!, noteId);
             const patch = createPatch(parentContent, content);
-            if (patch === '[]') return;
+            if (patch === '[]') return null;
             this.sql.exec(
-                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-                id, noteId, parentId, branch.id, title, patch, createdBy
+                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by, kind, summary) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
+                id, noteId, parentId, branch.id, title, patch, createdBy, kind, summary
             );
         }
 
@@ -282,9 +302,58 @@ export class UserNotesDurableObject extends DurableObject {
 
         this.sql.exec(`
             DELETE FROM note_versions WHERE note_id = ? AND id NOT IN (
-                SELECT id FROM note_versions WHERE note_id = ? ORDER BY created_at DESC LIMIT 100
+                SELECT id FROM note_versions WHERE note_id = ? ORDER BY created_at DESC LIMIT 1000
             )
         `, noteId, noteId);
+
+        return id;
+    }
+
+    private contentHash(content: string): string {
+        let hash = 5381;
+        for (let i = 0; i < content.length; i++) {
+            hash = ((hash << 5) + hash) ^ content.charCodeAt(i);
+        }
+        return (hash >>> 0).toString(36);
+    }
+
+    private beginEditSession(noteId: string): { sessionId: string } {
+        const note = this.getNote(noteId);
+        const branch = this.getCurrentBranch(noteId);
+        const sessionId = crypto.randomUUID();
+        this.sql.exec(
+            `INSERT INTO edit_sessions (id, note_id, branch_id, base_content, base_version_id)
+             VALUES (?, ?, ?, ?, ?)`,
+            sessionId, noteId, branch.id, (note?.content as string) || "", branch.head_version_id
+        );
+        return { sessionId };
+    }
+
+    private finalizeEditSession(noteId: string, sessionId: string, reason = "finalize"): { versionId?: string } {
+        const session = this.sql.exec(
+            "SELECT id, base_content FROM edit_sessions WHERE id = ? AND note_id = ? AND finalized_at IS NULL",
+            sessionId, noteId
+        ).toArray()[0] as any;
+        if (!session) return {};
+
+        const note = this.getNote(noteId);
+        const currentContent = (note?.content as string) || "";
+        this.sql.exec("UPDATE edit_sessions SET finalized_at = unixepoch(), last_edit_at = unixepoch() WHERE id = ?", sessionId);
+        if (!note || currentContent === (session.base_content || "")) return {};
+
+        const versionId = this.createVersion(
+            noteId,
+            note.title || "Untitled",
+            currentContent,
+            "session",
+            "session",
+            `Editing session (${reason})`
+        ) || undefined;
+        this.sql.exec(
+            "UPDATE notes SET pending_index = 1 WHERE id = ?",
+            noteId
+        );
+        return { versionId };
     }
 
     private reconstructVersion(versionId: string, noteId: string): string {
@@ -412,7 +481,7 @@ export class UserNotesDurableObject extends DurableObject {
                 if (hasActiveYjs) {
                     // Yjs WebSocket is the source of truth — only update metadata columns
                     this.sql.exec(
-                        `UPDATE notes SET title = ?, content = ?, folder_id = ?, sync_mode = ?, updated_at = unixepoch() WHERE id = ?`,
+                        `UPDATE notes SET title = ?, content = ?, folder_id = ?, sync_mode = ?, pending_index = 1, updated_at = unixepoch() WHERE id = ?`,
                         body.title || "Untitled", body.content || "",
                         body.folder_id !== undefined ? body.folder_id : existing.folder_id,
                         body.sync_mode !== undefined ? body.sync_mode : existing.sync_mode,
@@ -421,20 +490,18 @@ export class UserNotesDurableObject extends DurableObject {
                 } else {
                     // No active Yjs session — null stale yjs_state so next client bootstraps from HTTP
                     this.sql.exec(
-                        `UPDATE notes SET title = ?, content = ?, yjs_state = NULL, folder_id = ?, sync_mode = ?, updated_at = unixepoch() WHERE id = ?`,
+                        `UPDATE notes SET title = ?, content = ?, yjs_state = NULL, folder_id = ?, sync_mode = ?, pending_index = 1, updated_at = unixepoch() WHERE id = ?`,
                         body.title || "Untitled", body.content || "",
                         body.folder_id !== undefined ? body.folder_id : existing.folder_id,
                         body.sync_mode !== undefined ? body.sync_mode : existing.sync_mode,
                         id
                     );
                 }
-                if (body.content) this.createVersion(id, body.title || "Untitled", body.content);
             } else {
                 this.sql.exec(
-                    `INSERT INTO notes (id, title, content, folder_id, sync_mode, updated_at) VALUES (?, ?, ?, ?, ?, unixepoch())`,
+                    `INSERT INTO notes (id, title, content, folder_id, sync_mode, pending_index, updated_at) VALUES (?, ?, ?, ?, ?, 1, unixepoch())`,
                     id, body.title || "Untitled", body.content || "", body.folder_id ?? null, body.sync_mode || "cloud"
                 );
-                if (body.content) this.createVersion(id, body.title || "Untitled", body.content);
             }
             const note = this.getNote(id);
             this.broadcastJson({ type: "note-updated", note });
@@ -506,10 +573,35 @@ export class UserNotesDurableObject extends DurableObject {
         if (request.method === "GET" && path.match(/^\/notes\/[^/]+\/meta$/)) {
             const id = path.split("/")[2];
             const rows = this.sql.exec(
-                "SELECT id, title, locked, published, folder_id, sync_mode, created_at, updated_at FROM notes WHERE id = ?", id
+                "SELECT id, title, locked, published, folder_id, sync_mode, yjs_initialized_at, pending_index, created_at, updated_at FROM notes WHERE id = ?", id
             ).toArray();
             if (!rows[0]) return new Response("Not found", { status: 404 });
             return Response.json(rows[0]);
+        }
+
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/sessions$/)) {
+            const noteId = path.split("/")[2];
+            return Response.json(this.beginEditSession(noteId));
+        }
+
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/sessions\/[^/]+\/finalize$/)) {
+            const parts = path.split("/");
+            const noteId = parts[2];
+            const sessionId = parts[4];
+            const body = await request.json().catch(() => ({})) as { reason?: string };
+            return Response.json(this.finalizeEditSession(noteId, sessionId, body.reason || "finalize"));
+        }
+
+        if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/memory-indexed$/)) {
+            const noteId = path.split("/")[2];
+            const note = this.getNote(noteId);
+            if (!note) return new Response("Not found", { status: 404 });
+            this.sql.exec(
+                "UPDATE notes SET last_indexed_hash = ?, last_indexed_at = unixepoch(), pending_index = 0 WHERE id = ?",
+                this.contentHash((note.content as string) || ""),
+                noteId
+            );
+            return Response.json({ ok: true });
         }
 
         // Check if a note exists (for ownership resolution)
@@ -561,7 +653,7 @@ export class UserNotesDurableObject extends DurableObject {
             // Version the current state before switching (so no work is lost)
             const currentNote = this.getNote(noteId);
             if (currentNote?.content) {
-                this.createVersion(noteId, currentNote.title || "Untitled", currentNote.content as string, "auto-backup");
+                this.createVersion(noteId, currentNote.title || "Untitled", currentNote.content as string, "auto-backup", "backup", "Auto-backup before branch checkout");
             }
 
             // Switch current branch
@@ -619,7 +711,7 @@ export class UserNotesDurableObject extends DurableObject {
             const sourceContent = this.reconstructVersion(source.head_version_id, noteId);
 
             // Create a merge version on the current branch
-            this.createVersion(noteId, `Merge ${source.name}`, sourceContent, "merge");
+            this.createVersion(noteId, `Merge ${source.name}`, sourceContent, "merge", "merge", `Merged ${source.name}`);
 
             this.sql.exec(
                 "UPDATE notes SET content = ?, yjs_state = NULL, updated_at = unixepoch() WHERE id = ?",
@@ -640,8 +732,8 @@ export class UserNotesDurableObject extends DurableObject {
             ).toArray();
             const current = this.getCurrentBranch(noteId);
             const versions = this.sql.exec(
-                `SELECT id, parent_id, branch_id, title, is_checkpoint, created_by, created_at FROM note_versions
-                 WHERE note_id = ? ORDER BY created_at DESC LIMIT 100`, noteId
+                `SELECT id, parent_id, branch_id, title, is_checkpoint, created_by, kind, summary, created_at FROM note_versions
+                 WHERE note_id = ? ORDER BY created_at DESC LIMIT 1000`, noteId
             ).toArray();
             const note = this.getNote(noteId);
             return Response.json({
@@ -655,8 +747,8 @@ export class UserNotesDurableObject extends DurableObject {
         if (request.method === "GET" && path.match(/^\/notes\/[^/]+\/history$/)) {
             const noteId = path.split("/")[2];
             const rows = this.sql.exec(
-                `SELECT id, note_id, title, is_checkpoint, branch_id, created_by, created_at FROM note_versions
-                 WHERE note_id = ? ORDER BY created_at DESC LIMIT 100`, noteId
+                `SELECT id, note_id, title, is_checkpoint, branch_id, created_by, kind, summary, created_at FROM note_versions
+                 WHERE note_id = ? ORDER BY created_at DESC LIMIT 1000`, noteId
             ).toArray();
             return Response.json(rows);
         }
@@ -666,7 +758,7 @@ export class UserNotesDurableObject extends DurableObject {
             const noteId = parts[2];
             const versionId = parts[4];
             const row = this.sql.exec(
-                "SELECT id, note_id, title, is_checkpoint, created_by, created_at FROM note_versions WHERE id = ? AND note_id = ?",
+                "SELECT id, note_id, title, is_checkpoint, created_by, kind, summary, created_at FROM note_versions WHERE id = ? AND note_id = ?",
                 versionId, noteId
             ).toArray()[0];
             if (!row) return new Response("Version not found", { status: 404 });
@@ -687,7 +779,7 @@ export class UserNotesDurableObject extends DurableObject {
             // Version the current state before restoring (so restore itself is reversible)
             const current = this.getNote(noteId);
             if (current?.content) {
-                this.createVersion(noteId, current.title || "Untitled", current.content as string, "auto-backup");
+                this.createVersion(noteId, current.title || "Untitled", current.content as string, "auto-backup", "backup", "Auto-backup before restore");
             }
 
             // Apply the restored content
@@ -700,7 +792,7 @@ export class UserNotesDurableObject extends DurableObject {
                 restoredTitle, restoredContent, noteId
             );
 
-            this.createVersion(noteId, restoredTitle, restoredContent, "restore");
+            this.createVersion(noteId, restoredTitle, restoredContent, "restore", "restore", "Restored version");
             this.resetNoteSync(noteId);
 
             const note = this.getNote(noteId);
@@ -820,14 +912,10 @@ export class UserNotesDurableObject extends DurableObject {
             if (msg.type === "save-note") {
                 const { id, title, content } = msg;
                 this.sql.exec(
-                    `INSERT INTO notes (id, title, content, updated_at) VALUES (?, ?, ?, unixepoch())
-                     ON CONFLICT(id) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = unixepoch()`,
+                    `INSERT INTO notes (id, title, content, pending_index, updated_at) VALUES (?, ?, ?, 1, unixepoch())
+                     ON CONFLICT(id) DO UPDATE SET title = excluded.title, content = excluded.content, pending_index = 1, updated_at = unixepoch()`,
                     id, title || "Untitled", content || ""
                 );
-                if (content) {
-                    const userId = this.ctx.getTags(ws).find((t) => t.startsWith("user:"))?.slice(5) || "unknown";
-                    this.createVersion(id, title || "Untitled", content, userId);
-                }
                 const note = this.getNote(id);
                 this.broadcastJson({ type: "note-updated", note }, ws);
             }

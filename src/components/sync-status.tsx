@@ -1,7 +1,7 @@
 import { useOnlineStatus } from "@/lib/online-status";
 import { isTauri } from "@/lib/platform";
 
-type SaveState = "idle" | "saving" | "saved" | "offline-saved";
+type SaveState = "idle" | "saving" | "saved" | "offline-saved" | "error";
 
 export function SaveIndicator({ saveState, cloudConnected }: { saveState: SaveState; cloudConnected?: boolean }) {
     const online = useOnlineStatus();
@@ -12,7 +12,11 @@ export function SaveIndicator({ saveState, cloudConnected }: { saveState: SaveSt
     let label: string;
     let sublabel: string | null = null;
 
-    if (!online && !isTauri) {
+    if (saveState === "error") {
+        dotColor = "bg-red-500";
+        label = "Save failed";
+        sublabel = "Retrying";
+    } else if (!online && !isTauri) {
         dotColor = "bg-amber-500";
         label = saveState === "saving" ? "Saving locally…" : "Saved offline";
         sublabel = "Will sync when online";

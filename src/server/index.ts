@@ -509,7 +509,28 @@ app.post("/api/notes/:id/publish", async (c) => {
     const session = await getSession(c.env, c.req.raw);
     if (!session || session.user.isAnonymous) return c.text("Sign in to publish notes", 403);
     const { published } = await c.req.json() as { published: boolean };
-    return c.var.userStub.fetch(new Request(`https://do/notes/${c.req.param("id")}/published`, {
+    const noteId = c.req.param("id");
+
+    // When publishing, also publish any images embedded in the note so anonymous
+    // readers can load them via the public media route.
+    if (published) {
+        const noteRes = await c.var.userStub.fetch(new Request(`https://do/notes/${noteId}`));
+        if (noteRes.ok) {
+            const note = await noteRes.json() as { content?: string };
+            const ids = new Set<string>();
+            const re = /\/api\/media\/([a-f0-9-]+)\/file/gi;
+            let match: RegExpExecArray | null;
+            while ((match = re.exec(note.content || "")) !== null) ids.add(match[1]);
+            await Promise.all([...ids].map((id) =>
+                c.var.userStub.fetch(new Request(`https://do/media/${id}/published`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ published: true }),
+                })).catch(() => {})
+            ));
+        }
+    }
+
+    return c.var.userStub.fetch(new Request(`https://do/notes/${noteId}/published`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ published }),
     }));

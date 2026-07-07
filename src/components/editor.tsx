@@ -8,10 +8,14 @@ import {
     EditorCommandEmpty,
     EditorBubble,
     EditorBubbleItem,
+    ImageResizer,
     type JSONContent,
     type EditorInstance,
     handleCommandNavigation,
+    handleImagePaste,
+    handleImageDrop,
 } from "novel";
+import { uploadFn } from "@/lib/image-upload";
 import { useDebouncedCallback } from "use-debounce";
 import { deriveTitle } from "@/lib/note-preview";
 import {
@@ -512,6 +516,8 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                         handleDOMEvents: {
                             keydown: (_view, event) => readOnly ? false : handleCommandNavigation(event),
                         },
+                        handlePaste: (view, event) => readOnly ? false : handleImagePaste(view, event, uploadFn),
+                        handleDrop: (view, event, _slice, moved) => readOnly ? false : handleImageDrop(view, event, moved, uploadFn),
                         attributes: {
                             class: `focus:outline-none max-w-full ${compact ? "min-h-[180px]" : "min-h-[400px]"} ${readOnly ? "select-text" : ""}`,
                         },
@@ -575,6 +581,8 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                             </EditorCommandList>
                         </EditorCommand>
                     )}
+
+                    {!readOnly && <ImageResizer />}
                 </EditorContent>
             </EditorRoot>
 

@@ -11,26 +11,36 @@ function formatDate(timestamp: number): string {
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Rewrite an editor image src to its publicly-servable URL. Images are stored
+// in the doc as the authed path /api/media/{id}/file (works in the editor);
+// anonymous blog readers must use the public, no-auth path instead.
+function publicImageSrc(src: string, userId: string): string {
+    const m = /^\/api\/media\/([^/]+)\/file$/.exec(src || "");
+    if (m && userId) return `/api/public/${userId}/media/${m[1]}/file`;
+    return src;
+}
+
 // Convert TipTap JSON content to HTML
 // skipFirst: omit the first node (usually the title heading) to avoid duplication
-function tiptapToHtml(content: string, skipFirst = false): string {
+// userId: owner id, used to rewrite image srcs to their public URLs
+function tiptapToHtml(content: string, skipFirst = false, userId = ""): string {
     try {
         const doc = typeof content === "string" ? JSON.parse(content) : content;
         if (!doc?.content) return "";
         const nodes = skipFirst ? doc.content.slice(1) : doc.content;
-        return renderNodes(nodes);
+        return renderNodes(nodes, userId);
     } catch {
         return escapeHtml(content || "");
     }
 }
 
-function renderNodes(nodes: any[]): string {
-    return nodes.map(renderNode).join("");
+function renderNodes(nodes: any[], userId: string): string {
+    return nodes.map((n) => renderNode(n, userId)).join("");
 }
 
-function renderNode(node: any): string {
+function renderNode(node: any, userId: string): string {
     if (!node) return "";
-    const children = node.content ? renderNodes(node.content) : "";
+    const children = node.content ? renderNodes(node.content, userId) : "";
 
     switch (node.type) {
         case "paragraph":
@@ -68,7 +78,7 @@ function renderNode(node: any): string {
         case "hardBreak":
             return "<br>";
         case "image":
-            return `<img src="${escapeHtml(node.attrs?.src || "")}" alt="${escapeHtml(node.attrs?.alt || "")}" />`;
+            return `<img src="${escapeHtml(publicImageSrc(node.attrs?.src || "", userId))}" alt="${escapeHtml(node.attrs?.alt || "")}" loading="lazy" />`;
         case "taskList":
             return `<ul class="task-list">${children}</ul>`;
         case "taskItem": {
@@ -168,10 +178,11 @@ export function renderPublicPage(profile: any, notes: any[], baseUrl: string): s
     const colorMode = profile.color_mode || "light";
     const t = THEMES[colorMode as keyof typeof THEMES] || THEMES.light;
 
+    const userId = profile.user_id || "";
     const entries = notes.map((note: any) => {
         const date = note.published_at ? formatDate(note.published_at) : "";
         const noteTitle = escapeHtml(note.title || "Untitled");
-        const html = tiptapToHtml(note.content, true);
+        const html = tiptapToHtml(note.content, true, userId);
         const folderName = note.folder_name ? escapeHtml(note.folder_name) : "";
         return `
             <article>
@@ -212,7 +223,7 @@ export function renderPublicNote(profile: any, note: any, baseUrl: string): stri
     const pageTitle = escapeHtml(profile.page_title || "My Notes");
     const noteTitle = escapeHtml(note.title || "Untitled");
     const date = note.published_at ? formatDate(note.published_at) : "";
-    const html = tiptapToHtml(note.content, true);
+    const html = tiptapToHtml(note.content, true, profile.user_id || "");
     const font = profile.font || "serif";
     const colorMode = profile.color_mode || "light";
 

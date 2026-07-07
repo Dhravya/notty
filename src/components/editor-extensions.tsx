@@ -13,7 +13,9 @@ import {
     Command,
     createSuggestionItems,
     renderItems,
+    UploadImagesPlugin,
 } from "novel";
+import TiptapImage from "@tiptap/extension-image";
 import {
     Heading1Icon,
     Heading2Icon,
@@ -25,7 +27,9 @@ import {
     MinusIcon,
     CodeXmlIcon,
     TextIcon,
+    ImageIcon,
 } from "lucide-react";
+import { uploadFn } from "@/lib/image-upload";
 
 export const suggestionItems = createSuggestionItems([
     {
@@ -110,6 +114,26 @@ export const suggestionItems = createSuggestionItems([
         },
     },
     {
+        title: "Image",
+        description: "Upload an image from your device",
+        icon: <ImageIcon size={18} />,
+        searchTerms: ["image", "photo", "picture", "media", "upload"],
+        command: ({ editor, range }) => {
+            editor.chain().focus().deleteRange(range).run();
+            const input = document.createElement("input");
+            input.type = "file";
+            input.accept = "image/*";
+            input.onchange = () => {
+                const file = input.files?.[0];
+                if (file) {
+                    const pos = editor.view.state.selection.from;
+                    uploadFn(file, editor.view, pos);
+                }
+            };
+            input.click();
+        },
+    },
+    {
         title: "Divider",
         description: "Horizontal rule",
         icon: <MinusIcon size={18} />,
@@ -124,6 +148,23 @@ const slashCommand = Command.configure({
     suggestion: {
         items: () => suggestionItems,
         render: renderItems,
+    },
+});
+
+// Image node with novel's upload placeholder plugin (shows a spinner-styled
+// preview while the file uploads to R2, then swaps in the real <img>).
+const tiptapImage = TiptapImage.extend({
+    addProseMirrorPlugins() {
+        return [
+            UploadImagesPlugin({
+                imageClass: "opacity-40 rounded-lg border border-[var(--color-border-warm)]",
+            }),
+        ];
+    },
+}).configure({
+    allowBase64: false,
+    HTMLAttributes: {
+        class: "rounded-lg border border-[var(--color-border-warm)] my-4 max-w-full",
     },
 });
 
@@ -153,6 +194,7 @@ export const extensions = [
     }),
     TaskList.configure({ HTMLAttributes: { class: "not-prose" } }),
     TaskItem.configure({ nested: true }),
+    tiptapImage,
     HorizontalRule,
     CharacterCount,
     TiptapUnderline,

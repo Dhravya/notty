@@ -3,7 +3,7 @@ loadEnv();
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { renderPublicPage, renderPublicNote } from "./public-page";
+import { renderPublicPage, renderPublicNote, publicNoteTitle } from "./public-page";
 import { renderRSS } from "./rss";
 import { generateOgImage } from "./og-image";
 import {
@@ -52,6 +52,14 @@ app.get("*", async (c, next) => {
 
     const path = new URL(c.req.url).pathname;
 
+    // Let API + asset routes through — the public media path
+    // (/api/public/:userId/media/...) that inline blog images point at lives
+    // on the same subdomain and would otherwise 404 in the note branch below,
+    // breaking every image on published pages.
+    if (path.startsWith("/api/") || path.startsWith("/assets/") || path === "/favicon.ico" || path === "/robots.txt") {
+        return next();
+    }
+
     // Resolve username → userId
     const authStub = c.env.AUTH_DO.get(c.env.AUTH_DO.idFromName("auth-singleton"));
     const profileRes = await authStub.fetch(new Request(`https://do/internal/profile/by-username?username=${encodeURIComponent(username)}`));
@@ -80,7 +88,9 @@ app.get("*", async (c, next) => {
         const noteRes = await userStub.fetch(new Request(`https://do/notes/${noteId}`));
         if (!noteRes.ok) return c.text("Not found", 404);
         const note = await noteRes.json() as any;
-        if (!note.published) return c.text("Not found", 404);
+        // A trashed note must not stay readable at its public URL, even if it
+        // was published before being trashed.
+        if (!note.published || note.deleted_at) return c.text("Not found", 404);
         const baseUrl = `https://${username}.${c.env.BASE_DOMAIN || "notty.page"}`;
         return c.html(renderPublicNote(profile, note, baseUrl));
     }
@@ -332,14 +342,20 @@ app.get("/api/notes/:id", async (c) => {
 });
 
 app.put("/api/notes/:id", async (c) => {
-    const body = await c.req.text();
+    const raw = await c.req.text();
     const id = c.req.param("id");
     const shareToken = c.req.query("share");
     const access = await resolveNoteAccess(c.env, id, c.var.userId, shareToken);
     if (!access) return c.text("Not found", 404);
     if (access.permission === "view") return c.text("Read only", 403);
+    // Pin the body's id to the authorized URL param. Otherwise a share-edit
+    // user authorized for note X could send {id: Y, ...} and overwrite an
+    // arbitrary note Y in the owner's DO.
+    let parsed: any = {};
+    try { parsed = raw ? JSON.parse(raw) : {}; } catch { return c.text("Bad request", 400); }
+    parsed.id = id;
     const doRes = await access.stub.fetch(new Request("https://do/notes", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body,
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed),
     }));
 
     return doRes;
@@ -671,7 +687,7 @@ app.get("/api/shared/:token/og-image.png", async (c) => {
     const note = await noteRes.json() as any;
 
     const origin = new URL(c.req.url).origin;
-    const png = await generateOgImage(note.title || "Untitled", note.content || "", `${origin}/logo.png`);
+    const png = await generateOgImage(publicNoteTitle(note), note.content || "", `${origin}/logo.png`);
     return c.body(png as any, 200, {
         "Content-Type": "image/png",
         "Cache-Control": "public, max-age=3600",
@@ -697,14 +713,7 @@ app.get("/api/shared/:token", async (c) => {
     let title = "Shared Note";
     if (noteRes.ok) {
         const note = await noteRes.json() as any;
-        title = note.title || "Untitled";
-        if (title === "Untitled" && note.content) {
-            try {
-                const doc = JSON.parse(note.content);
-                const first = doc?.content?.[0]?.content?.map((n: any) => n.text || "").join("").trim();
-                if (first) title = first;
-            } catch {}
-        }
+        title = publicNoteTitle(note);
     }
 
     const origin = new URL(c.req.url).origin;

@@ -19,23 +19,30 @@ export class NottyProvider {
     private pendingUpdates: Uint8Array[] = [];
     private serverUrl: string | null = null;
     private reconnectDelay = 1000;
+    private failedConnects = 0;
     private syncResolve: (() => void) | null = null;
     readonly whenSynced: Promise<void>;
 
     private shareToken: string | undefined;
     private authToken: string | undefined;
     private offlineOnly: boolean;
+    private onContentReset: (() => void) | undefined;
+    // Set once the server evicts this doc (close 4000). The local doc is now
+    // stale relative to the server; no more sends, and the editor must remount
+    // off fresh server state instead of pushing this doc's history back.
+    reset = false;
 
     constructor(
         private noteId: string,
         doc: Y.Doc,
-        options?: { connect?: boolean; shareToken?: string; token?: string; skipPersistence?: boolean }
+        options?: { connect?: boolean; shareToken?: string; token?: string; skipPersistence?: boolean; onContentReset?: () => void }
     ) {
         this.doc = doc;
         this.awareness = new awarenessProtocol.Awareness(doc);
         this.offlineOnly = options?.connect === false;
         this.shareToken = options?.shareToken;
         this.authToken = options?.token;
+        this.onContentReset = options?.onContentReset;
         this.whenSynced = new Promise(resolve => { this.syncResolve = resolve; });
 
         // Skip persistence for shared notes and desktop (which uses local SQLite)
@@ -44,7 +51,7 @@ export class NottyProvider {
             : new IndexeddbPersistence(`notty-${noteId}`, doc);
 
         this.doc.on("update", (update: Uint8Array, origin: any) => {
-            if (origin === this) return;
+            if (origin === this || this.reset) return;
             if (this.connected) {
                 this.sendUpdate(update);
             } else {
@@ -94,6 +101,7 @@ export class NottyProvider {
         ws.onopen = () => {
             this.connected = true;
             this.reconnectDelay = 1000;
+            this.failedConnects = 0;
 
             // Sync step 1 — tells server what we have, server sends what we're missing
             const encoder = encoding.createEncoder();
@@ -101,11 +109,14 @@ export class NottyProvider {
             syncProtocol.writeSyncStep1(encoder, this.doc);
             ws.send(encoding.toUint8Array(encoder));
 
-            // Flush any updates queued while offline
-            for (const update of this.pendingUpdates) {
+            // Flush any updates queued while offline. Swap the array first —
+            // if the socket dies mid-flush, sendUpdate re-queues into the new
+            // array instead of being cleared away below.
+            const queued = this.pendingUpdates;
+            this.pendingUpdates = [];
+            for (const update of queued) {
                 this.sendUpdate(update);
             }
-            this.pendingUpdates = [];
 
             // Send awareness
             if (this.awareness.getLocalState() !== null) {
@@ -144,12 +155,33 @@ export class NottyProvider {
         };
 
         ws.onclose = (event) => {
+            const wasConnected = this.connected;
             this.ws = null;
             this.connected = false;
-            if (!this.destroyed && event.code !== 4000) {
-                this.reconnectDelay = Math.min((this.reconnectDelay || 1000) * 2, 30000);
-                setTimeout(() => this.connect(), this.reconnectDelay);
+            if (this.destroyed) return;
+            if (event.code === 4000) {
+                // Server reset this note's content (restore/checkout/merge/
+                // delete on another client). Our doc is now stale — stop all
+                // sends and tell the editor to remount off fresh server state.
+                // Without this, the next keystroke would push this stale doc's
+                // full history back and clobber the reset.
+                this.reset = true;
+                this.pendingUpdates = [];
+                try { this.onContentReset?.(); } catch {}
+                return;
             }
+            if (!wasConnected) {
+                // Connection refused before opening — with a dead session the
+                // server 401s the upgrade and this loops forever in silence.
+                // After a few failures, ask the auth layer to recover the
+                // session; keep backing off and retrying regardless.
+                this.failedConnects++;
+                if (this.failedConnects === 3) {
+                    try { window.dispatchEvent(new CustomEvent("notty:auth-expired")); } catch {}
+                }
+            }
+            this.reconnectDelay = Math.min((this.reconnectDelay || 1000) * 2, 30000);
+            setTimeout(() => this.connect(), this.reconnectDelay);
         };
 
         ws.onerror = () => {
@@ -160,7 +192,12 @@ export class NottyProvider {
     }
 
     private sendUpdate(update: Uint8Array) {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            // Socket mid-close/opening — queue instead of dropping so the edit
+            // reaches the server on reconnect even before syncStep1 completes.
+            this.pendingUpdates.push(update);
+            return;
+        }
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, MSG_SYNC);
         syncProtocol.writeUpdate(encoder, update);

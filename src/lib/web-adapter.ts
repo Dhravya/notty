@@ -4,7 +4,16 @@ import { NottyProvider } from "./yjs-provider";
 import { authClient } from "./auth-client";
 
 async function assertOk(res: Response, context: string) {
-    if (!res.ok) throw new Error(`${context}: ${res.status} ${res.statusText}`);
+    if (!res.ok) {
+        // A 401 mid-session means the session cookie died under us. Tell the
+        // auth layer to recover instead of letting every save silently loop.
+        if (res.status === 401) {
+            try { window.dispatchEvent(new CustomEvent("notty:auth-expired")); } catch {}
+        }
+        const err = new Error(`${context}: ${res.status} ${res.statusText}`);
+        (err as any).status = res.status;
+        throw err;
+    }
 }
 
 // IndexedDB-backed cache for the notes list so the PWA works offline
@@ -446,7 +455,7 @@ export class WebAdapter implements NottyAdapter {
         await assertOk(res, "Failed to update profile");
     }
 
-    createProvider(noteId: string, doc: Y.Doc, opts?: { shareToken?: string }): NottyProvider {
-        return new NottyProvider(noteId, doc, { connect: false, shareToken: opts?.shareToken });
+    createProvider(noteId: string, doc: Y.Doc, opts?: { shareToken?: string; onContentReset?: () => void }): NottyProvider {
+        return new NottyProvider(noteId, doc, { connect: false, shareToken: opts?.shareToken, onContentReset: opts?.onContentReset });
     }
 }

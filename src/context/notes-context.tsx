@@ -192,7 +192,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }, [adapter, trash]);
 
     const saveNote = useCallback(async (id: string, title: string, content: string, folderId?: string | null) => {
-        const now = Date.now();
+        // Seconds, to match the server's unixepoch() everywhere. Using ms here
+        // made every optimistic note's updated_at ~1000x larger than any server
+        // timestamp, so the fetchNotes merge (local.updated_at > server) always
+        // kept the local copy and never reconciled server truth — cross-device
+        // edits, server-derived titles, and publish state stayed invisible.
+        const now = Math.floor(Date.now() / 1000);
         const note: Note = { id, title, content, folder_id: folderId, created_at: now, updated_at: now };
 
         localEditsRef.current.set(id, note);
@@ -207,11 +212,24 @@ export function NotesProvider({ children }: { children: ReactNode }) {
             return [note, ...prev];
         });
 
-        await adapter.saveNote(id, title, content, folderId);
+        const result = await adapter.saveNote(id, title, content, folderId);
+        // Reconcile with the server's authoritative row (server timestamps,
+        // derived title) and drop the local override so future revalidations
+        // can bring in cross-device changes.
+        const saved = (result as any)?.note;
+        if (saved?.id === id) {
+            const current = localEditsRef.current.get(id);
+            // Only clear if the user hasn't typed again since this save started.
+            if (current && current.content === content && current.title === title) {
+                localEditsRef.current.delete(id);
+                setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...saved } : n)));
+            }
+        }
     }, [adapter]);
 
     const createNote = useCallback(async (id: string, folderId?: string | null): Promise<Note> => {
-        const note: Note = { id, title: "Untitled", content: "", folder_id: folderId, created_at: Date.now(), updated_at: Date.now() };
+        const now = Math.floor(Date.now() / 1000);
+        const note: Note = { id, title: "Untitled", content: "", folder_id: folderId, created_at: now, updated_at: now };
         localEditsRef.current.set(id, note);
         setNotes((prev) => [note, ...prev]);
         await adapter.saveNote(id, "Untitled", "", folderId);
@@ -220,7 +238,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
     const updateNote = useCallback((id: string, data: Partial<Pick<Note, "title" | "content">>) => {
         setNotes((prev) =>
-            prev.map((n) => (n.id === id ? { ...n, ...data, updated_at: Date.now() } : n))
+            prev.map((n) => (n.id === id ? { ...n, ...data, updated_at: Math.floor(Date.now() / 1000) } : n))
         );
     }, []);
 

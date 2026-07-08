@@ -1,3 +1,5 @@
+import { publicNoteTitle } from "./public-page";
+
 function escapeXml(str: string): string {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -26,7 +28,12 @@ function renderNode(node: any): string {
     const children = node.content ? renderNodes(node.content) : "";
     switch (node.type) {
         case "paragraph": return `<p>${children}</p>`;
-        case "heading": return `<h${node.attrs?.level || 2}>${children}</h${node.attrs?.level || 2}>`;
+        case "heading": {
+            // attrs.level is client-controllable via Yjs — clamp to a real
+            // heading level, never interpolate it raw into the tag name.
+            const level = Math.min(6, Math.max(1, parseInt(node.attrs?.level, 10) || 2));
+            return `<h${level}>${children}</h${level}>`;
+        }
         case "text": {
             let text = escapeXml(node.text || "");
             for (const mark of node.marks || []) {
@@ -50,13 +57,13 @@ export function renderRSS(profile: any, notes: any[], baseUrl: string): string {
     const description = escapeXml(profile.page_description || "");
 
     const items = notes.map((note: any) => {
-        const noteTitle = escapeXml(note.title || "Untitled");
+        const noteTitle = escapeXml(publicNoteTitle(note));
         const html = tiptapToPlainHtml(note.content, true);
         const pubDate = note.published_at ? toRfc822(note.published_at) : "";
         return `    <item>
       <title>${noteTitle}</title>
-      <link>${baseUrl}/${note.id}</link>
-      <guid isPermaLink="true">${baseUrl}/${note.id}</guid>
+      <link>${baseUrl}/${escapeXml(String(note.id))}</link>
+      <guid isPermaLink="true">${baseUrl}/${escapeXml(String(note.id))}</guid>
       ${pubDate ? `<pubDate>${pubDate}</pubDate>` : ""}
       <description><![CDATA[${html}]]></description>
     </item>`;

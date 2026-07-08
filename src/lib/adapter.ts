@@ -189,5 +189,5 @@ export interface NottyAdapter {
     updateProfile(data: Partial<Profile>): Promise<void>;
 
     // Realtime
-    createProvider(noteId: string, doc: Y.Doc, opts?: { shareToken?: string }): NottyProvider;
+    createProvider(noteId: string, doc: Y.Doc, opts?: { shareToken?: string; onContentReset?: () => void }): NottyProvider;
 }

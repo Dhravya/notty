@@ -443,7 +443,7 @@ export function NotePage() {
             {/* Editor */}
             <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-14 sm:pt-16 pb-16 sm:pb-24">
                 <div className="bg-[var(--color-card)] border border-[var(--color-border-warm)] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.04),0_12px_32px_rgba(0,0,0,0.03)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3),0_12px_32px_rgba(0,0,0,0.2)] min-h-[85vh]">
-                    <Editor key={`${id}-${editorKey}`} noteId={id} shareToken={shareToken} readOnly={isViewOnly} folderId={folderId} saveGuardRef={saveGuardRef} />
+                    <Editor key={`${id}-${editorKey}`} noteId={id} shareToken={shareToken} readOnly={isViewOnly} folderId={folderId} saveGuardRef={saveGuardRef} onContentReset={handleContentReset} />
                 </div>
             </div>
 

@@ -44,6 +44,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAttempt((a) => a + 1);
     }, []);
 
+    // When any API call hits a 401 mid-session (expired/rotated cookie), re-run
+    // the session check so we either recover a session or show the banner —
+    // instead of the app silently failing every save while looking signed in.
+    useEffect(() => {
+        let pending = false;
+        const onExpired = () => {
+            if (pending) return;
+            pending = true;
+            setTimeout(() => { pending = false; }, 5000); // debounce bursts of 401s
+            // Re-check quietly (no loading flip — that would unmount the editor
+            // mid-typing). If the session is truly gone, show the banner.
+            (async () => {
+                try {
+                    const u = await adapter.getSession();
+                    const resolved = u ?? (await signIn().catch(() => null));
+                    setUser(resolved);
+                    setFailed(!resolved);
+                } catch {}
+            })();
+        };
+        window.addEventListener("notty:auth-expired", onExpired);
+        return () => window.removeEventListener("notty:auth-expired", onExpired);
+    }, [adapter, signIn]);
+
     useEffect(() => {
         let cancelled = false;
         (async () => {

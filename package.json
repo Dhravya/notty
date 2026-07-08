@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"scripts": {
-		"dev": "wrangler dev --persist-to /tmp/notty-wrangler-state",
+		"dev": "wrangler dev --persist-to .wrangler-state",
 		"build": "vite build && wrangler deploy --dry-run --outdir dist",
 		"deploy": "vite build && wrangler deploy",
 		"preview": "wrangler dev",

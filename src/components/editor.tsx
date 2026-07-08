@@ -26,6 +26,7 @@ import {
     CodeIcon,
 } from "lucide-react";
 import { SaveIndicator } from "./sync-status";
+import { registerNoteFlusher } from "@/lib/note-flush";
 import * as Y from "yjs";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
@@ -88,7 +89,7 @@ function wait(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGuardRef, compact = false }: { noteId: string; shareToken?: string; readOnly?: boolean; folderId?: string | null; saveGuardRef?: React.MutableRefObject<boolean>; compact?: boolean }) {
+export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGuardRef, compact = false, onContentReset }: { noteId: string; shareToken?: string; readOnly?: boolean; folderId?: string | null; saveGuardRef?: React.MutableRefObject<boolean>; compact?: boolean; onContentReset?: () => void }) {
     const { saveNote } = useNotes();
     const adapter = useAdapter();
     const { user } = useAuth();
@@ -142,9 +143,22 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     };
 
     const ydoc = useMemo(() => new Y.Doc(), [noteId]);
+    // Ref-indirected so the provider callback is stable but always calls the
+    // latest handler. When the server evicts our doc (remote restore/checkout/
+    // merge/delete → WS close 4000), suppress local saves and remount off
+    // fresh server content — otherwise the next keystroke re-uploads our stale
+    // doc and silently clobbers the reset.
+    const contentResetRef = useRef(onContentReset);
+    contentResetRef.current = onContentReset;
     const provider = useMemo(
-        () => adapter.createProvider(noteId, ydoc, { shareToken }),
-        [noteId, ydoc, adapter, shareToken]
+        () => adapter.createProvider(noteId, ydoc, {
+            shareToken,
+            onContentReset: () => {
+                if (saveGuardRef) saveGuardRef.current = true;
+                contentResetRef.current?.();
+            },
+        }),
+        [noteId, ydoc, adapter, shareToken, saveGuardRef]
     );
 
     const ensureSession = useCallback(async () => {
@@ -204,7 +218,10 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     // Save the title + content JSON to the durable store. For shared notes,
     // Yjs WebSocket is the source of truth, so skip HTTP/local snapshot saves.
     const saveNow = useCallback((editor: EditorInstance) => {
-        if (!user || shareToken || readOnly || saveGuardRef?.current) return Promise.resolve();
+        // Desktop saves go to local SQLite and are safe without a session —
+        // never let a slow/failed auth check discard what the user typed.
+        const desktop = "__TAURI_INTERNALS__" in window;
+        if ((!user && !desktop) || shareToken || readOnly || saveGuardRef?.current || provider.reset) return Promise.resolve();
         const json = editor.getJSON();
         const text = editor.getText().trim();
         const content = JSON.stringify(json);
@@ -227,8 +244,11 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
                     scheduleMemorySync();
                     scheduleSessionIdle();
                     return;
-                } catch (e) {
-                    if (attempt === 2) {
+                } catch (e: any) {
+                    // 401 means the session died — retrying won't help. Fail fast;
+                    // assertOk already pinged the auth layer to recover, and the
+                    // next debounced save goes through once the session is back.
+                    if (e?.status === 401 || attempt === 2) {
                         setSaveState("error");
                         throw e;
                     }
@@ -354,27 +374,46 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
             return () => { cancelled = true; };
         }
 
-        // Web: show the editor as soon as local IndexedDB settles (≤150ms) — no
-        // waiting on the network. Warm revisits paint with content already in the
-        // doc; new/cold notes paint an empty editor instantly.
+        // Web: show the editor as soon as local IndexedDB settles — no waiting
+        // on the network. Warm revisits paint with content already in the doc;
+        // new/cold notes paint an empty editor instantly. Cap the wait so a
+        // hung IndexedDB can never leave the editor on "Loading..." forever.
         const persistenceReady = provider.persistence
             ? provider.persistence.whenSynced
             : Promise.resolve();
-        (compact ? persistenceReady : Promise.race([persistenceReady, new Promise((r) => setTimeout(r, 150))]))
+        Promise.race([persistenceReady, new Promise((r) => setTimeout(r, compact ? 400 : 150))])
             .then(() => { if (!cancelled) setReady(true); });
 
-        // Retroactively load the server snapshot in the background. Only seed if
-        // the doc is still empty after WS has had a chance (avoids CRDT doubling).
+        // Retroactively load the server snapshot in the background. Whether
+        // seeding it into the Yjs doc is safe depends on ONE authoritative
+        // signal — has this note ever had server-side Yjs state?
+        //  - Never initialized: the server doc is empty, seeding can't collide
+        //    with anything → seed immediately.
+        //  - Initialized: the server doc IS the source of truth. Seeding before
+        //    its state arrives is exactly the CRDT-doubling bug (two independent
+        //    insertions of the same text merge into duplicated content). So wait
+        //    for the real sync; seed only if the doc is still empty after it
+        //    (e.g. yjs_state was reset server-side). Post-sync seeding is safe.
         (async () => {
             try {
-                const data: any = await Promise.race([
+                const [data, meta] = await Promise.all([
                     adapter.getNote(noteId).catch((e) => { console.warn("[notty] HTTP bootstrap fetch failed:", e); return null; }),
-                    new Promise((r) => setTimeout(() => r(null), 1000)),
+                    adapter.getNoteMeta(noteId).catch(() => null),
                 ]);
                 if (cancelled) return;
-                const parsed = parseDoc(data?.content);
+                const parsed = parseDoc((data as any)?.content);
                 if (!parsed || hasContent()) return;
-                await Promise.race([provider.whenSynced, new Promise((r) => setTimeout(r, 800))]);
+                // Seed immediately ONLY when we can positively confirm the
+                // server doc was never initialized. If meta says it was — OR if
+                // the meta fetch failed (null) and we can't tell — wait for the
+                // real Yjs sync before seeding, so we never insert content that
+                // also arrives over the wire (the CRDT-doubling bug). Bounded so
+                // a dead socket can't strand a cold note without its content.
+                const definitelyFresh = meta !== null && !meta.yjs_initialized_at;
+                if (!definitelyFresh) {
+                    await Promise.race([provider.whenSynced, new Promise((r) => setTimeout(r, 3000))]);
+                    if (cancelled || hasContent()) return;
+                }
                 seed(parsed);
             } finally {
                 // Loading is done (content seeded, already present, or genuinely
@@ -395,6 +434,12 @@ export function Editor({ noteId, shareToken, readOnly = false, folderId, saveGua
     // Ref so unmount cleanup always calls the latest saveNow without dep churn
     const saveNowRef = useRef(saveNow);
     saveNowRef.current = saveNow;
+
+    // Let publish/share force a save instead of racing the debounce.
+    useEffect(() => registerNoteFlusher(noteId, async () => {
+        debouncedSave.cancel();
+        if (editorRef.current) await saveNowRef.current(editorRef.current);
+    }), [noteId, debouncedSave]);
 
     useEffect(() => () => {
         // On content reset (checkout/restore/merge), cancel pending saves

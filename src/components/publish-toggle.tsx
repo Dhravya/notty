@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { Globe, GlobeLock, Copy, Check, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import { useAdapter } from "@/context/adapter-context";
 import { useAuth } from "@/context/auth-context";
 import { useNotes, type Note } from "@/context/notes-context";
+import { flushNote } from "@/lib/note-flush";
 import type { Profile } from "@/lib/adapter";
 
 export function PublishToggle({ noteId }: { noteId: string }) {
@@ -14,8 +16,6 @@ export function PublishToggle({ noteId }: { noteId: string }) {
     const [copied, setCopied] = useState(false);
     const [profile, setProfile] = useState<Profile | null>(null);
     const ref = useRef<HTMLDivElement>(null);
-
-    if ((user as any)?.isAnonymous) return null;
 
     const note = notes.find((n) => n.id === noteId);
     const isPublished = !!(note?.published);
@@ -37,14 +37,30 @@ export function PublishToggle({ noteId }: { noteId: string }) {
         return () => document.removeEventListener("mousedown", handler);
     }, [open]);
 
+    // Early-return AFTER all hooks — anonymous sessions flip to real users in
+    // place, and a conditional return above the hooks changes the hook count
+    // between renders (React crashes the whole note page).
+    if ((user as any)?.isAnonymous) return null;
+
     const handlePublish = async () => {
         if (isLocked) return;
         setLoading(true);
         try {
+            // Push the editor's current content to the server first so the
+            // public page can never render a stale or blank snapshot.
+            await flushNote(noteId).catch(() => {});
             await adapter.publishNote(noteId, true);
             patchNote(noteId, { published: 1, published_at: Math.floor(Date.now() / 1000) } as Partial<Note>);
+            setOpen(true);
         } catch (e: any) {
             console.error("Publish failed:", e);
+            if (e?.status === 409) {
+                toast.error("Couldn't publish — the note hasn't synced to the server yet. Check your connection and try again.");
+            } else if (e?.status === 401) {
+                toast.error("Couldn't publish — you've been signed out. Sign in and try again.");
+            } else {
+                toast.error("Couldn't publish the note. Try again in a moment.");
+            }
         } finally {
             setLoading(false);
         }

@@ -33,6 +33,14 @@ export function QuickNotePage() {
     const [quickNotes, setQuickNotes] = useState<Note[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [loaded, setLoaded] = useState(false);
+    // Don't gate the editor on auth forever — after a short grace period, let
+    // the user type. Saves are local-first on desktop; auth issues surface in
+    // the main app, not by bricking the widget on "Loading...".
+    const [authGraceOver, setAuthGraceOver] = useState(false);
+    useEffect(() => {
+        const t = setTimeout(() => setAuthGraceOver(true), 3000);
+        return () => clearTimeout(t);
+    }, []);
     const quickNotesRef = useRef(quickNotes);
     quickNotesRef.current = quickNotes;
     const currentIndexRef = useRef(currentIndex);
@@ -46,7 +54,9 @@ export function QuickNotePage() {
 
     const addNewNote = useCallback(async () => {
         const id = crypto.randomUUID();
-        createNote(id, QUICK_FOLDER);
+        // Fire-and-forget is fine here (saves upsert the note anyway), but a
+        // rejection must not become an unhandled error that kills the widget.
+        createNote(id, QUICK_FOLDER).catch((e) => console.warn("[notty] Quick note create failed (will upsert on save):", e));
         const newNote: Note = {
             id,
             title: "Untitled",
@@ -60,10 +70,17 @@ export function QuickNotePage() {
     }, [createNote]);
 
     useEffect(() => {
-        loadQuickNotes().then((notes) => {
-            if (notes.length === 0) addNewNote();
-            setLoaded(true);
-        });
+        loadQuickNotes()
+            .then((notes) => {
+                if (notes.length === 0) addNewNote();
+            })
+            .catch((e) => {
+                // Don't strand the widget on "Loading..." if the DB read fails —
+                // start a fresh note so the user can still write.
+                console.warn("[notty] Failed to load quick notes:", e);
+                addNewNote();
+            })
+            .finally(() => setLoaded(true));
     }, []);
 
     // Reload quick notes from DB when window regains focus (picks up saves from cycling)
@@ -100,7 +117,7 @@ export function QuickNotePage() {
         return () => window.removeEventListener("keydown", onKeyDown);
     }, [prev, next, addNewNote, openInMain]);
 
-    if (!loaded || !user) {
+    if (!loaded || (!user && !authGraceOver)) {
         return <div className="h-screen bg-[var(--color-paper)] flex items-center justify-center text-sm text-[var(--color-ink-muted)]">Loading...</div>;
     }
 

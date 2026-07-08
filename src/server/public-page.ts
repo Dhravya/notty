@@ -1,7 +1,26 @@
 // Server-side HTML rendering for public pages — no React, no JS needed for readers
 
+import { deriveTitleAndPreview } from "../lib/note-preview";
+
+// Last line of defense against publishing a stale "Untitled": prefer the stored
+// title, but if it's missing/default, derive it from the note content itself.
+export function publicNoteTitle(note: { title?: string; content?: string }): string {
+    if (note.title && note.title !== "Untitled") return note.title;
+    return deriveTitleAndPreview(note.content).title || note.title || "Untitled";
+}
+
 function escapeHtml(str: string): string {
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// Only allow safe link protocols on public pages. An edit-share collaborator
+// (or pasted content) can put a javascript:/data: URL in a link href; without
+// this it executes on the owner's *.notty.page origin for every reader.
+function safeUrl(raw: string): string {
+    const url = (raw || "").trim();
+    if (/^javascript:/i.test(url) || /^data:/i.test(url) || /^vbscript:/i.test(url)) return "#";
+    if (/^(https?:\/\/|mailto:|\/|#|\.)/i.test(url)) return url;
+    return "#";
 }
 
 function formatDate(timestamp: number): string {
@@ -46,7 +65,9 @@ function renderNode(node: any, userId: string): string {
         case "paragraph":
             return `<p>${children || "<br>"}</p>`;
         case "heading": {
-            const level = node.attrs?.level || 2;
+            // Clamp — attrs.level is client-controllable via Yjs and would
+            // otherwise inject arbitrary markup into the tag name.
+            const level = Math.min(6, Math.max(1, parseInt(node.attrs?.level, 10) || 2));
             return `<h${level}>${children}</h${level}>`;
         }
         case "text": {
@@ -58,7 +79,7 @@ function renderNode(node: any, userId: string): string {
                     case "underline": text = `<u>${text}</u>`; break;
                     case "strike": text = `<s>${text}</s>`; break;
                     case "code": text = `<code>${text}</code>`; break;
-                    case "link": text = `<a href="${escapeHtml(mark.attrs?.href || "")}" rel="noopener">${text}</a>`; break;
+                    case "link": text = `<a href="${escapeHtml(safeUrl(mark.attrs?.href || ""))}" rel="noopener nofollow">${text}</a>`; break;
                 }
             }
             return text;
@@ -181,13 +202,13 @@ export function renderPublicPage(profile: any, notes: any[], baseUrl: string): s
     const userId = profile.user_id || "";
     const entries = notes.map((note: any) => {
         const date = note.published_at ? formatDate(note.published_at) : "";
-        const noteTitle = escapeHtml(note.title || "Untitled");
+        const noteTitle = escapeHtml(publicNoteTitle(note));
         const html = tiptapToHtml(note.content, true, userId);
         const folderName = note.folder_name ? escapeHtml(note.folder_name) : "";
         return `
             <article>
                 <div class="date">${[date, folderName].filter(Boolean).join(" · ")}</div>
-                <h2><a href="${baseUrl}/${note.id}">${noteTitle}</a></h2>
+                <h2><a href="${baseUrl}/${escapeHtml(String(note.id))}">${noteTitle}</a></h2>
                 <div class="content">${html}</div>
             </article>`;
     }).join("\n<hr>\n");
@@ -221,7 +242,7 @@ export function renderPublicPage(profile: any, notes: any[], baseUrl: string): s
 
 export function renderPublicNote(profile: any, note: any, baseUrl: string): string {
     const pageTitle = escapeHtml(profile.page_title || "My Notes");
-    const noteTitle = escapeHtml(note.title || "Untitled");
+    const noteTitle = escapeHtml(publicNoteTitle(note));
     const date = note.published_at ? formatDate(note.published_at) : "";
     const html = tiptapToHtml(note.content, true, profile.user_id || "");
     const font = profile.font || "serif";

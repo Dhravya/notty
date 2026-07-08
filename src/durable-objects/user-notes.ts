@@ -3,7 +3,7 @@ import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
-import { createPatch, applyPatch } from "../lib/diff";
+import { applyPatch } from "../lib/diff";
 import { deriveTitleAndPreview, isEmptyDoc } from "../lib/note-preview";
 
 const MSG_SYNC = 0;
@@ -28,7 +28,10 @@ function yNodeToTiptap(ynode: Y.XmlElement | Y.XmlText | Y.AbstractType<any>): a
 
     if (ynode instanceof Y.XmlElement) {
         const attrs = ynode.getAttributes();
-        const children = Array.from(ynode).flatMap(child => {
+        // NOTE: Y.XmlElement is NOT iterable — Array.from(ynode) yields
+        // undefineds and silently serializes every node as empty. toArray()
+        // is the real child accessor.
+        const children = ynode.toArray().flatMap(child => {
             const result = yNodeToTiptap(child);
             return Array.isArray(result) ? result : [result];
         }).filter(Boolean);
@@ -46,10 +49,12 @@ export class UserNotesDurableObject extends DurableObject {
     private sql: SqlStorage;
     private docs = new Map<string, Y.Doc>();
     private saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    private bucket: R2Bucket;
 
     constructor(ctx: DurableObjectState, env: Env) {
         super(ctx, env);
         this.sql = ctx.storage.sql;
+        this.bucket = env.MEDIA_BUCKET;
         this.ctx.blockConcurrencyWhile(async () => {
             this.sql.exec(`
                 CREATE TABLE IF NOT EXISTS notes (
@@ -107,6 +112,10 @@ export class UserNotesDurableObject extends DurableObject {
             migrate("ALTER TABLE note_versions ADD COLUMN branch_id TEXT");
             migrate("ALTER TABLE note_versions ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual'");
             migrate("ALTER TABLE note_versions ADD COLUMN summary TEXT");
+            // 'sqlite' = legacy checkpoint/patch chain stored in `data`;
+            // 'r2' = full snapshot in R2, `data` holds the object key
+            migrate("ALTER TABLE note_versions ADD COLUMN storage TEXT NOT NULL DEFAULT 'sqlite'");
+            migrate("ALTER TABLE note_versions ADD COLUMN content_hash TEXT");
 
             // Branches — like git refs, just named pointers to version heads
             this.sql.exec(`
@@ -198,37 +207,65 @@ export class UserNotesDurableObject extends DurableObject {
                 }
             }
 
-            const existing = this.saveTimers.get(noteId);
-            if (existing) clearTimeout(existing);
-            this.saveTimers.set(noteId, setTimeout(() => {
-                try {
-                    const state = Y.encodeStateAsUpdate(doc!);
-                    // Also sync content + title columns so HTTP reads stay fresh
-                    const content = this.extractContentJson(noteId);
-                    if (content) {
-                        const title = deriveTitleAndPreview(content).title || "Untitled";
-                        this.sql.exec(
-                            "UPDATE notes SET yjs_state = ?, content = ?, title = ?, yjs_initialized_at = COALESCE(yjs_initialized_at, unixepoch()), pending_index = 1, updated_at = unixepoch() WHERE id = ?",
-                            state, content, title, noteId
-                        );
-                    } else {
-                        this.sql.exec(
-                            "UPDATE notes SET yjs_state = ?, yjs_initialized_at = COALESCE(yjs_initialized_at, unixepoch()), updated_at = unixepoch() WHERE id = ?",
-                            state, noteId
-                        );
-                    }
-                } catch (e) {
-                    console.error(`Failed to persist Yjs state for note ${noteId}:`, e);
-                }
-                this.saveTimers.delete(noteId);
-            }, 2000));
+            this.scheduleDocPersist(noteId, doc!, 2000);
         });
 
         this.docs.set(noteId, doc);
         return doc;
     }
 
-    private readonly CHECKPOINT_INTERVAL = 20;
+    // Persist a live Yjs doc to the notes row: yjs_state always; content +
+    // title when serialization yields a non-empty doc. Never replaces
+    // non-empty column content with an empty doc — if serialization ever
+    // regresses (or the doc is transiently blank), losing the row content is
+    // the worst outcome. Shared by the debounced save and the last-close flush
+    // so the content column can never lag behind yjs_state.
+    private persistDocNow(noteId: string, doc: Y.Doc) {
+        const state = Y.encodeStateAsUpdate(doc);
+        let content = this.extractContentJson(noteId);
+        if (content && isEmptyDoc(content)) {
+            const existing = this.sql.exec("SELECT content FROM notes WHERE id = ?", noteId).toArray()[0] as any;
+            if (existing?.content && !isEmptyDoc(existing.content)) content = null;
+        }
+        if (content) {
+            const title = deriveTitleAndPreview(content).title || "Untitled";
+            this.sql.exec(
+                "UPDATE notes SET yjs_state = ?, content = ?, title = ?, yjs_initialized_at = COALESCE(yjs_initialized_at, unixepoch()), pending_index = 1, updated_at = unixepoch() WHERE id = ?",
+                state, content, title, noteId
+            );
+        } else {
+            this.sql.exec(
+                "UPDATE notes SET yjs_state = ?, yjs_initialized_at = COALESCE(yjs_initialized_at, unixepoch()), updated_at = unixepoch() WHERE id = ?",
+                state, noteId
+            );
+        }
+    }
+
+    private scheduleDocPersist(noteId: string, doc: Y.Doc, delayMs: number, attempt = 0) {
+        const existing = this.saveTimers.get(noteId);
+        if (existing) clearTimeout(existing);
+        this.saveTimers.set(noteId, setTimeout(() => {
+            this.saveTimers.delete(noteId);
+            try {
+                this.persistDocNow(noteId, doc);
+            } catch (e) {
+                console.error(`Failed to persist Yjs state for note ${noteId} (attempt ${attempt + 1}):`, e);
+                // Don't drop the only copy of the user's edits on a transient
+                // failure — re-arm with backoff. The in-memory doc is the sole
+                // holder of this content until a persist succeeds.
+                if (attempt < 5) this.scheduleDocPersist(noteId, doc, Math.min(2000 * 2 ** attempt, 30000), attempt + 1);
+            }
+        }, delayMs));
+    }
+
+    // Consecutive autosave-session versions inside this window are amended in
+    // place instead of appended, so tab-switch/idle churn doesn't flood history.
+    private readonly SESSION_AMEND_WINDOW_S = 15 * 60;
+    private readonly MAX_VERSIONS_PER_NOTE = 1000;
+
+    private versionKey(noteId: string, versionId: string): string {
+        return `versions/${this.ctx.id.toString()}/${noteId}/${versionId}.json`;
+    }
 
     // --- Branch helpers ---
 
@@ -261,11 +298,17 @@ export class UserNotesDurableObject extends DurableObject {
 
     // --- Version creation (branch-aware) ---
 
-    private createVersion(noteId: string, title: string, content: string, createdBy = "system", kind = "manual", summary: string | null = null): string | null {
+    private async createVersion(noteId: string, title: string, content: string, createdBy = "system", kind = "manual", summary: string | null = null): Promise<string | null> {
         const branch = this.getCurrentBranch(noteId);
         const parentId = branch.head_version_id;
+        const hash = this.contentHash(content);
 
-        const id = crypto.randomUUID();
+        const head = parentId ? this.sql.exec(
+            "SELECT id, kind, storage, data, content_hash, created_at FROM note_versions WHERE id = ?", parentId
+        ).toArray()[0] as any : null;
+
+        // Identical to head → nothing to record
+        if (head?.content_hash && head.content_hash === hash) return null;
 
         // Defense-in-depth: never record an accidental wipe as a version. A
         // transient empty doc (load race, reconnect, stale beacon) snapshotted
@@ -273,49 +316,89 @@ export class UserNotesDurableObject extends DurableObject {
         // diffs. If the new content is blank but the previous version had text,
         // skip — the client-side guard should already prevent this, but old
         // clients and the unmount beacon can still slip an empty doc through.
-        if (parentId && isEmptyDoc(content) && !isEmptyDoc(this.reconstructVersion(parentId, noteId))) {
-            return null;
+        // Fail closed: if we can't read the previous version (R2 blip), don't
+        // record the empty doc either.
+        if (head && isEmptyDoc(content)) {
+            let prevContent: string;
+            try {
+                prevContent = await this.reconstructVersion(head.id, noteId, { strict: true });
+            } catch {
+                return null;
+            }
+            if (!isEmptyDoc(prevContent)) return null;
         }
 
-        // Count versions on this branch since last checkpoint
-        let sinceCheckpoint = 0;
-        if (parentId) {
-            const count = this.sql.exec(
-                `SELECT COUNT(*) as c FROM note_versions
-                 WHERE branch_id = ? AND created_at >= COALESCE(
-                     (SELECT created_at FROM note_versions WHERE branch_id = ? AND is_checkpoint = 1 ORDER BY created_at DESC LIMIT 1),
-                     0
-                 )`, branch.id, branch.id
-            ).toArray()[0] as { c: number };
-            sinceCheckpoint = count?.c ?? 0;
-        }
-
-        const needsCheckpoint = !parentId || sinceCheckpoint >= this.CHECKPOINT_INTERVAL;
-
-        if (needsCheckpoint) {
+        // Coalesce autosave churn: a session version right after another
+        // session version just moves that version forward instead of stacking
+        // a new entry per tab-switch/idle. Never amend a version that another
+        // branch also points at (branch create copies head_version_id) — that
+        // would silently rewrite the other branch's snapshot in place.
+        const now = Math.floor(Date.now() / 1000);
+        const headSharedWithOtherBranch = head ? this.sql.exec(
+            "SELECT 1 FROM note_branches WHERE head_version_id = ? AND id != ? LIMIT 1", head.id, branch.id
+        ).toArray().length > 0 : false;
+        if (
+            kind === "session" && head?.kind === "session" && head.storage === "r2" &&
+            !headSharedWithOtherBranch &&
+            now - head.created_at < this.SESSION_AMEND_WINDOW_S
+        ) {
+            await this.bucket.put(head.data, content, { httpMetadata: { contentType: "application/json" } });
             this.sql.exec(
-                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by, kind, summary) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
-                id, noteId, parentId, branch.id, title, content, createdBy, kind, summary
+                "UPDATE note_versions SET title = ?, summary = ?, content_hash = ?, created_at = unixepoch() WHERE id = ?",
+                title, summary, hash, head.id
             );
-        } else {
-            const parentContent = this.reconstructVersion(parentId!, noteId);
-            const patch = createPatch(parentContent, content);
-            if (patch === '[]') return null;
-            this.sql.exec(
-                "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by, kind, summary) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
-                id, noteId, parentId, branch.id, title, patch, createdBy, kind, summary
-            );
+            return head.id;
         }
+
+        const id = crypto.randomUUID();
+        const key = this.versionKey(noteId, id);
+        await this.bucket.put(key, content, { httpMetadata: { contentType: "application/json" } });
+        this.sql.exec(
+            "INSERT INTO note_versions (id, note_id, parent_id, branch_id, title, is_checkpoint, data, created_by, kind, summary, storage, content_hash) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'r2', ?)",
+            id, noteId, parentId, branch.id, title, key, createdBy, kind, summary, hash
+        );
 
         this.sql.exec("UPDATE note_branches SET head_version_id = ? WHERE id = ?", id, branch.id);
 
-        this.sql.exec(`
-            DELETE FROM note_versions WHERE note_id = ? AND id NOT IN (
-                SELECT id FROM note_versions WHERE note_id = ? ORDER BY created_at DESC LIMIT 1000
-            )
-        `, noteId, noteId);
-
+        await this.pruneVersions(noteId);
         return id;
+    }
+
+    private async pruneVersions(noteId: string) {
+        const stale = this.sql.exec(
+            `SELECT id, data, storage FROM note_versions WHERE note_id = ? AND id NOT IN (
+                SELECT id FROM note_versions WHERE note_id = ? ORDER BY created_at DESC LIMIT ${this.MAX_VERSIONS_PER_NOTE}
+            )`, noteId, noteId
+        ).toArray() as any[];
+        if (stale.length === 0) return;
+        for (let i = 0; i < stale.length; i += 500) {
+            const batch = stale.slice(i, i + 500);
+            this.sql.exec(
+                `DELETE FROM note_versions WHERE id IN (${batch.map(() => "?").join(",")})`,
+                ...batch.map((r) => r.id)
+            );
+            const keys = batch.filter((r) => r.storage === "r2").map((r) => r.data as string);
+            if (keys.length > 0) {
+                try { await this.bucket.delete(keys); } catch (e) {
+                    console.error(`Failed to delete pruned version objects for note ${noteId}:`, e);
+                }
+            }
+        }
+    }
+
+    // Delete all version data (rows + R2 objects) for a note. Used on permanent delete.
+    private async deleteAllVersions(noteId: string) {
+        const rows = this.sql.exec(
+            "SELECT data FROM note_versions WHERE note_id = ? AND storage = 'r2'", noteId
+        ).toArray() as any[];
+        this.sql.exec("DELETE FROM note_versions WHERE note_id = ?", noteId);
+        this.sql.exec("DELETE FROM note_branches WHERE note_id = ?", noteId);
+        for (let i = 0; i < rows.length; i += 1000) {
+            const keys = rows.slice(i, i + 1000).map((r) => r.data as string);
+            try { await this.bucket.delete(keys); } catch (e) {
+                console.error(`Failed to delete version objects for note ${noteId}:`, e);
+            }
+        }
     }
 
     private contentHash(content: string): string {
@@ -338,7 +421,7 @@ export class UserNotesDurableObject extends DurableObject {
         return { sessionId };
     }
 
-    private finalizeEditSession(noteId: string, sessionId: string, reason = "finalize"): { versionId?: string } {
+    private async finalizeEditSession(noteId: string, sessionId: string, reason = "finalize"): Promise<{ versionId?: string }> {
         const session = this.sql.exec(
             "SELECT id, base_content FROM edit_sessions WHERE id = ? AND note_id = ? AND finalized_at IS NULL",
             sessionId, noteId
@@ -350,9 +433,9 @@ export class UserNotesDurableObject extends DurableObject {
         this.sql.exec("UPDATE edit_sessions SET finalized_at = unixepoch(), last_edit_at = unixepoch() WHERE id = ?", sessionId);
         if (!note || currentContent === (session.base_content || "")) return {};
 
-        const versionId = this.createVersion(
+        const versionId = await this.createVersion(
             noteId,
-            note.title || "Untitled",
+            deriveTitleAndPreview(currentContent).title || (note.title as string) || "Untitled",
             currentContent,
             "session",
             "session",
@@ -365,15 +448,33 @@ export class UserNotesDurableObject extends DurableObject {
         return { versionId };
     }
 
-    private reconstructVersion(versionId: string, noteId: string): string {
+    // strict: throw on R2 read errors instead of degrading to "" — used where
+    // the caller must distinguish "genuinely empty" from "couldn't read".
+    private async reconstructVersion(versionId: string, noteId: string, opts?: { strict?: boolean }): Promise<string> {
+        // New-style versions are full snapshots in R2
+        const head = this.sql.exec(
+            "SELECT storage, data FROM note_versions WHERE id = ?", versionId
+        ).toArray()[0] as any;
+        if (head?.storage === "r2") {
+            try {
+                const obj = await this.bucket.get(head.data);
+                if (obj) return await obj.text();
+            } catch (e) {
+                console.error(`Failed to read version object ${head.data}:`, e);
+                if (opts?.strict) throw e;
+            }
+            return "";
+        }
+
+        // Legacy versions: walk the checkpoint + patch chain in SQLite
         const chain: { id: string; data: string; is_checkpoint: number; parent_id: string | null }[] = [];
         let currentId: string | null = versionId;
 
         while (currentId) {
             const row = this.sql.exec(
-                "SELECT id, data, is_checkpoint, parent_id FROM note_versions WHERE id = ?", currentId
+                "SELECT id, data, is_checkpoint, parent_id, storage FROM note_versions WHERE id = ?", currentId
             ).toArray()[0] as any;
-            if (!row) break;
+            if (!row || row.storage === "r2") break;
             chain.unshift(row);
             if (row.is_checkpoint) break;
             currentId = row.parent_id;
@@ -415,8 +516,16 @@ export class UserNotesDurableObject extends DurableObject {
         this.saveTimers.delete(noteId);
         const doc = this.docs.get(noteId);
         if (!doc) return;
-        const state = Y.encodeStateAsUpdate(doc);
-        this.sql.exec("UPDATE notes SET yjs_state = ?, updated_at = unixepoch() WHERE id = ?", state, noteId);
+        // Full persist (yjs_state + content + title), not just yjs_state —
+        // otherwise the content column lags the final typing burst, and
+        // anything that snapshots or backs up from the column (restore,
+        // checkout, session finalize) captures stale content while
+        // yjs_state gets nulled — permanently losing the burst.
+        try {
+            this.persistDocNow(noteId, doc);
+        } catch (e) {
+            console.error(`Failed to flush pending save for note ${noteId}:`, e);
+        }
     }
 
     async fetch(request: Request): Promise<Response> {
@@ -508,6 +617,10 @@ export class UserNotesDurableObject extends DurableObject {
                         body.sync_mode !== undefined ? body.sync_mode : existing.sync_mode,
                         id
                     );
+                    // Also evict the cached in-memory doc — it still holds the
+                    // OLD Yjs state, and the next WS connect would serve it and
+                    // then persist it right back over this newer content.
+                    this.resetNoteSync(id);
                 }
             } else {
                 this.sql.exec(
@@ -521,8 +634,12 @@ export class UserNotesDurableObject extends DurableObject {
         }
         if (request.method === "DELETE" && path.startsWith("/notes/") && !path.includes("/", "/notes/".length)) {
             const id = path.slice("/notes/".length);
-            this.sql.exec("UPDATE notes SET deleted_at = unixepoch() WHERE id = ?", id);
-            this.docs.delete(id);
+            // Unpublish on trash — a trashed note must not stay readable at
+            // its public URL. Flush pending edits first so restore-from-trash
+            // recovers everything the user typed.
+            this.flushPendingSave(id);
+            this.sql.exec("UPDATE notes SET deleted_at = unixepoch(), published = 0 WHERE id = ?", id);
+            this.resetNoteSync(id);
             this.broadcastJson({ type: "note-deleted", id });
             return new Response("OK");
         }
@@ -538,7 +655,11 @@ export class UserNotesDurableObject extends DurableObject {
         if (request.method === "DELETE" && path.match(/^\/notes\/[^/]+\/permanent$/)) {
             const id = path.split("/")[2];
             this.sql.exec("DELETE FROM notes WHERE id = ?", id);
-            this.docs.delete(id);
+            // Full reset (not just docs.delete): kills the pending save timer
+            // (which would otherwise resurrect a cached doc) and closes any
+            // open sockets still accepting edits into the void.
+            this.resetNoteSync(id);
+            await this.deleteAllVersions(id);
             return Response.json({ ok: true });
         }
 
@@ -568,11 +689,19 @@ export class UserNotesDurableObject extends DurableObject {
             if (published) {
                 const note = this.getNote(id);
                 if (note?.locked) return new Response("Cannot publish a locked note", { status: 400 });
-                // Sync Yjs content to the content column so public pages have fresh data
-                const content = this.extractContentJson(id);
-                if (content) {
-                    this.sql.exec("UPDATE notes SET content = ? WHERE id = ?", content, id);
+                // Sync Yjs content AND title so the public page never renders a
+                // stale "Untitled" — the debounced Yjs save may not have fired yet
+                // when the user hits publish right after typing.
+                const content = this.extractContentJson(id) || (note?.content as string) || "";
+                // Refuse to publish a blank page. If neither the live Yjs doc nor
+                // the content column has text, the note hasn't reached the server
+                // (dead session, offline, sync failure) — publishing would ship an
+                // empty public page. Tell the client instead.
+                if (isEmptyDoc(content)) {
+                    return new Response("Note content hasn't synced to the server yet", { status: 409 });
                 }
+                const title = deriveTitleAndPreview(content).title || (note?.title as string) || "Untitled";
+                this.sql.exec("UPDATE notes SET content = ?, title = ? WHERE id = ?", content, title, id);
             }
             this.sql.exec(
                 `UPDATE notes SET published = ?, published_at = CASE WHEN ? THEN unixepoch() ELSE published_at END, updated_at = unixepoch() WHERE id = ?`,
@@ -601,7 +730,7 @@ export class UserNotesDurableObject extends DurableObject {
             const noteId = parts[2];
             const sessionId = parts[4];
             const body = await request.json().catch(() => ({})) as { reason?: string };
-            return Response.json(this.finalizeEditSession(noteId, sessionId, body.reason || "finalize"));
+            return Response.json(await this.finalizeEditSession(noteId, sessionId, body.reason || "finalize"));
         }
 
         if (request.method === "POST" && path.match(/^\/notes\/[^/]+\/memory-indexed$/)) {
@@ -662,20 +791,27 @@ export class UserNotesDurableObject extends DurableObject {
             ).toArray()[0] as any;
             if (!branch) return new Response("Branch not found", { status: 404 });
 
-            // Version the current state before switching (so no work is lost)
+            // Load branch HEAD content FIRST — strict, so an R2 blip aborts
+            // the checkout instead of silently writing "" over the live note.
+            let content = "";
+            if (branch.head_version_id) {
+                try {
+                    content = await this.reconstructVersion(branch.head_version_id, noteId, { strict: true });
+                } catch {
+                    return new Response("Could not load branch content, try again", { status: 503 });
+                }
+            }
+
+            // Version the current state before switching (so no work is lost).
+            // Flush first so the content column includes the final typing burst.
+            this.flushPendingSave(noteId);
             const currentNote = this.getNote(noteId);
             if (currentNote?.content) {
-                this.createVersion(noteId, currentNote.title || "Untitled", currentNote.content as string, "auto-backup", "backup", "Auto-backup before branch checkout");
+                await this.createVersion(noteId, (currentNote.title as string) || "Untitled", currentNote.content as string, "auto-backup", "backup", "Auto-backup before branch checkout");
             }
 
             // Switch current branch
             this.sql.exec("UPDATE notes SET current_branch_id = ?, updated_at = unixepoch() WHERE id = ?", branch_id, noteId);
-
-            // Load branch HEAD content
-            let content = "";
-            if (branch.head_version_id) {
-                content = this.reconstructVersion(branch.head_version_id, noteId);
-            }
 
             this.sql.exec(
                 "UPDATE notes SET content = ?, yjs_state = NULL, updated_at = unixepoch() WHERE id = ?",
@@ -720,10 +856,24 @@ export class UserNotesDurableObject extends DurableObject {
             const current = this.getCurrentBranch(noteId);
             if (current.id === source.id) return new Response("Cannot merge branch into itself", { status: 400 });
 
-            const sourceContent = this.reconstructVersion(source.head_version_id, noteId);
+            // Strict read — an R2 blip must abort the merge, not blank the note.
+            let sourceContent: string;
+            try {
+                sourceContent = await this.reconstructVersion(source.head_version_id, noteId, { strict: true });
+            } catch {
+                return new Response("Could not load source branch content, try again", { status: 503 });
+            }
+
+            // Back up the current state first (checkout and restore do this;
+            // merge previously overwrote the live note with no recovery path).
+            this.flushPendingSave(noteId);
+            const beforeMerge = this.getNote(noteId);
+            if (beforeMerge?.content) {
+                await this.createVersion(noteId, (beforeMerge.title as string) || "Untitled", beforeMerge.content as string, "auto-backup", "backup", "Auto-backup before merge");
+            }
 
             // Create a merge version on the current branch
-            this.createVersion(noteId, `Merge ${source.name}`, sourceContent, "merge", "merge", `Merged ${source.name}`);
+            await this.createVersion(noteId, `Merge ${source.name}`, sourceContent, "merge", "merge", `Merged ${source.name}`);
 
             this.sql.exec(
                 "UPDATE notes SET content = ?, yjs_state = NULL, updated_at = unixepoch() WHERE id = ?",
@@ -774,7 +924,7 @@ export class UserNotesDurableObject extends DurableObject {
                 versionId, noteId
             ).toArray()[0];
             if (!row) return new Response("Version not found", { status: 404 });
-            const content = this.reconstructVersion(versionId, noteId);
+            const content = await this.reconstructVersion(versionId, noteId);
             return Response.json({ ...row, content });
         }
         // Restore to a specific version
@@ -786,12 +936,12 @@ export class UserNotesDurableObject extends DurableObject {
             ).toArray()[0];
             if (!row) return new Response("Version not found", { status: 404 });
 
-            const restoredContent = this.reconstructVersion(version_id, noteId);
+            const restoredContent = await this.reconstructVersion(version_id, noteId);
 
             // Version the current state before restoring (so restore itself is reversible)
             const current = this.getNote(noteId);
             if (current?.content) {
-                this.createVersion(noteId, current.title || "Untitled", current.content as string, "auto-backup", "backup", "Auto-backup before restore");
+                await this.createVersion(noteId, (current.title as string) || "Untitled", current.content as string, "auto-backup", "backup", "Auto-backup before restore");
             }
 
             // Apply the restored content
@@ -804,7 +954,7 @@ export class UserNotesDurableObject extends DurableObject {
                 restoredTitle, restoredContent, noteId
             );
 
-            this.createVersion(noteId, restoredTitle, restoredContent, "restore", "restore", "Restored version");
+            await this.createVersion(noteId, restoredTitle, restoredContent, "restore", "restore", "Restored version");
             this.resetNoteSync(noteId);
 
             const note = this.getNote(noteId);
@@ -818,7 +968,13 @@ export class UserNotesDurableObject extends DurableObject {
                  FROM notes n LEFT JOIN folders f ON n.folder_id = f.id
                  WHERE n.published = 1 AND n.deleted_at IS NULL ORDER BY n.published_at DESC`
             ).toArray();
-            return Response.json(rows);
+            // Derive the title from content when the stored column is stale —
+            // the public page and RSS should never show "Untitled" for a note
+            // that has real text.
+            return Response.json(rows.map((row: any) => ({
+                ...row,
+                title: (row.title && row.title !== "Untitled") ? row.title : deriveTitleAndPreview(row.content).title || row.title || "Untitled",
+            })));
         }
 
         // --- Media routes ---
@@ -923,6 +1079,11 @@ export class UserNotesDurableObject extends DurableObject {
 
             if (msg.type === "save-note") {
                 const { id, title, content } = msg;
+                // The socket was authorized for exactly one note (its first
+                // tag). Without this check, any edit-share visitor could
+                // upsert ARBITRARY notes in the owner's DO by sending a
+                // save-note with a different id.
+                if (id !== this.ctx.getTags(ws)[0]) return;
                 this.sql.exec(
                     `INSERT INTO notes (id, title, content, pending_index, updated_at) VALUES (?, ?, ?, 1, unixepoch())
                      ON CONFLICT(id) DO UPDATE SET title = excluded.title, content = excluded.content, pending_index = 1, updated_at = unixepoch()`,
@@ -1011,7 +1172,7 @@ export class UserNotesDurableObject extends DurableObject {
 
     private getNote(id: string) {
         const rows = this.sql
-            .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, current_branch_id, created_at, updated_at FROM notes WHERE id = ?", id)
+            .exec("SELECT id, title, content, folder_id, sync_mode, locked, published, published_at, deleted_at, current_branch_id, created_at, updated_at FROM notes WHERE id = ?", id)
             .toArray();
         return rows[0] || null;
     }
@@ -1022,7 +1183,12 @@ export class UserNotesDurableObject extends DurableObject {
             const doc = this.getYDoc(noteId);
             const fragment = doc.getXmlFragment("default");
             if (fragment.length === 0) return null;
-            const json = { type: "doc", content: Array.from(fragment).map(yNodeToTiptap).flat().filter(Boolean) };
+            // toArray(), NOT Array.from() — Y.XmlFragment isn't iterable, and
+            // Array.from used to produce [undefined, ...], which serialized
+            // every note to {"type":"doc","content":[]} and then OVERWROTE the
+            // real content column with it on the debounced save. This was the
+            // "published note is completely blank / Untitled" bug.
+            const json = { type: "doc", content: fragment.toArray().map(yNodeToTiptap).flat().filter(Boolean) };
             return JSON.stringify(json);
         } catch {
             return null;
@@ -1032,9 +1198,14 @@ export class UserNotesDurableObject extends DurableObject {
     private broadcastJson(message: object, exclude?: WebSocket) {
         const data = JSON.stringify(message);
         for (const ws of this.ctx.getWebSockets()) {
-            if (ws !== exclude) {
-                try { ws.send(data); } catch { ws.close(); }
-            }
+            if (ws === exclude) continue;
+            // note-updated/media events carry full note content and are meant
+            // for the owner's other tabs. Shared-note visitors (perm:view/edit
+            // on ONE note) must not receive the owner's other notes.
+            const tags = this.ctx.getTags(ws);
+            const perm = tags.find((t) => t.startsWith("perm:"));
+            if (perm && perm !== "perm:owner") continue;
+            try { ws.send(data); } catch { ws.close(); }
         }
     }
 }
